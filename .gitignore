@@ -1,1 +1,20 @@
+# Python
+__pycache__/
+*.py[cod]
+
+# Environment/config
 .env
+
+# Data (large, not for git)
+core/data/historical_market_data/*
+
+# Build artifacts
+*.egg-info/
+dist/
+
+# Node.js
+frontend/node_modules/
+frontend/dist/
+
+# Editor/IDE
+.vscode/

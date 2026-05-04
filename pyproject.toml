@@ -1,0 +1,18 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "stock-market-analyzer"
+version = "0.1.0"
+description = "Local stock market analysis tooling"
+requires-python = ">=3.12"
+
+[project.scripts]
+market-data-ingestor = "core.data.market_data_ingestor.market_data_ingestor:main"
+market-data-parquet-merge = "core.data.market_data_ingestor.parquet_file_manager:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["backend*", "core*"]
+namespaces = true
