@@ -52,6 +52,18 @@ def _resolve_period(item: IndicatorRequestItem) -> int:
     return max(2, int(item.period))
 
 
+def _resolve_positive_int(value: int | None, default: int, minimum: int = 1) -> int:
+    if value is None:
+        return default
+    return max(minimum, int(value))
+
+
+def _resolve_float(value: float | None, default: float, minimum: float = 0.1) -> float:
+    if value is None:
+        return default
+    return max(minimum, float(value))
+
+
 def _to_points(
     unix_times: pd.Series,
     values: pd.Series,
@@ -187,7 +199,8 @@ def get_stock_indicators(ticker: str, request: StockIndicatorsRequest) -> StockI
 
         if indicator_type == "VWAP":
             line = ta.vwap(high, low, close, volume)
-            stdev = (close - line).rolling(window=period, min_periods=period).std()
+            band_period = _resolve_positive_int(item.band_period, period, minimum=2)
+            stdev = (close - line).rolling(window=band_period, min_periods=band_period).std()
             upper = line + stdev
             lower = line - stdev
 
@@ -218,24 +231,44 @@ def get_stock_indicators(ticker: str, request: StockIndicatorsRequest) -> StockI
             continue
 
         if indicator_type == "RSI":
+            ma_period = _resolve_positive_int(item.ma_period, period, minimum=2)
             line = ta.rsi(close, length=period)
+            ma_line = ta.sma(line, length=ma_period)
             indicator_results.append(
-                _series_from_single_line(
-                    item,
-                    f"RSI {period}",
-                    unix_times,
-                    line,
-                    period,
-                    start_time=request.start_time,
-                    end_time=request.end_time,
+                IndicatorSeriesItem(
+                    id=item.id,
+                    type="RSI",
+                    period=period,
+                    lines=[
+                        IndicatorLine(
+                            id=f"{item.id}-rsi",
+                            label=f"RSI {period}",
+                            points=_to_points(
+                                unix_times,
+                                line,
+                                start_time=request.start_time,
+                                end_time=request.end_time,
+                            ),
+                        ),
+                        IndicatorLine(
+                            id=f"{item.id}-rsi-ma",
+                            label=f"RSI MA {ma_period}",
+                            points=_to_points(
+                                unix_times,
+                                ma_line,
+                                start_time=request.start_time,
+                                end_time=request.end_time,
+                            ),
+                        ),
+                    ],
                 )
             )
             continue
 
         if indicator_type == "MACD":
             fast = period
-            slow = max(fast + 1, int(round(fast * 2.2)))
-            signal = 9
+            slow = max(fast + 1, _resolve_positive_int(item.slow_period, int(round(fast * 2.2)), minimum=2))
+            signal = _resolve_positive_int(item.signal_period, 9, minimum=1)
             macd = ta.macd(close, fast=fast, slow=slow, signal=signal)
             if macd is None or macd.empty:
                 macd_lines: list[IndicatorLine] = []
@@ -292,14 +325,15 @@ def get_stock_indicators(ticker: str, request: StockIndicatorsRequest) -> StockI
             continue
 
         if indicator_type == "BBANDS":
-            bbands = ta.bbands(close, length=period, std=2)
+            std_dev = _resolve_float(item.std_dev, 2.0)
+            bbands = ta.bbands(close, length=period, std=std_dev)
             if bbands is None or bbands.empty:
                 bb_lines: list[IndicatorLine] = []
             else:
                 columns = [str(column) for column in bbands.columns]
-                lower_col = _find_column(columns, f"BBL_{period}_2.0", "BBL_")
-                middle_col = _find_column(columns, f"BBM_{period}_2.0", "BBM_")
-                upper_col = _find_column(columns, f"BBU_{period}_2.0", "BBU_")
+                lower_col = _find_column(columns, f"BBL_{period}_{std_dev}", "BBL_")
+                middle_col = _find_column(columns, f"BBM_{period}_{std_dev}", "BBM_")
+                upper_col = _find_column(columns, f"BBU_{period}_{std_dev}", "BBU_")
 
                 if not lower_col or not middle_col or not upper_col:
                     bb_lines = []

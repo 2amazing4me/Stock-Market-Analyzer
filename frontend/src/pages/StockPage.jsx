@@ -5,32 +5,76 @@ import HeaderBar from "../components/HeaderBar";
 import { formatChartTime, normalizeTicker } from "../lib/tradingview";
 
 const TIMEFRAME_OPTIONS = [
-  { label: "5m", value: "5m" },
-  { label: "1h", value: "1h" },
-  { label: "1d", value: "1d" },
+  { label: "5 minutes", shortLabel: "5m", value: "5m", group: "Minutes" },
+  { label: "10 minutes", shortLabel: "10m", value: "10m", group: "Minutes" },
+  { label: "15 minutes", shortLabel: "15m", value: "15m", group: "Minutes" },
+  { label: "30 minutes", shortLabel: "30m", value: "30m", group: "Minutes" },
+  { label: "45 minutes", shortLabel: "45m", value: "45m", group: "Minutes" },
+  { label: "1 hour", shortLabel: "1h", value: "1h", group: "Hours" },
+  { label: "2 hours", shortLabel: "2h", value: "2h", group: "Hours" },
+  { label: "3 hours", shortLabel: "3h", value: "3h", group: "Hours" },
+  { label: "4 hours", shortLabel: "4h", value: "4h", group: "Hours" },
+  { label: "1 day", shortLabel: "1D", value: "1d", group: "Days" },
+  { label: "1 week", shortLabel: "1W", value: "1w", group: "Weeks" },
+  { label: "1 month", shortLabel: "1M", value: "1mo", group: "Months" },
+  { label: "3 months", shortLabel: "3M", value: "3mo", group: "Months" },
+  { label: "6 months", shortLabel: "6M", value: "6mo", group: "Months" },
+  { label: "12 months", shortLabel: "12M", value: "12mo", group: "Months" },
 ];
 
-const INDICATOR_TYPES = ["SMA", "EMA", "WMA", "VWAP", "RSI", "MACD", "BBANDS"];
-const INDICATOR_PERIOD_PRESETS = {
-  SMA: [9, 14, 20, 50, 100, 200],
-  EMA: [9, 12, 20, 50, 100, 200],
-  WMA: [9, 14, 20, 50, 100],
-  VWAP: [14, 20, 50],
-  RSI: [7, 14, 21],
-  MACD: [8, 12, 21],
-  BBANDS: [14, 20, 50],
+const INDICATOR_TYPES = [
+  { type: "VOLUME", name: "Volume", description: "Volume histogram overlaid on the price chart." },
+  { type: "SMA", name: "Simple Moving Average", description: "Average close over a period." },
+  { type: "EMA", name: "Exponential Moving Average", description: "Moving average weighted toward recent closes." },
+  { type: "WMA", name: "Weighted Moving Average", description: "Linearly weighted moving average." },
+  { type: "VWAP", name: "Volume Weighted Average Price", description: "Price weighted by traded volume." },
+  { type: "RSI", name: "Relative Strength Index", description: "Momentum oscillator in its own pane." },
+  { type: "MACD", name: "Moving Average Convergence Divergence", description: "MACD, signal, and histogram pane." },
+  { type: "BBANDS", name: "Bollinger Bands", description: "Upper, middle, and lower volatility bands." },
+];
+const TV_COLORS = {
+  aqua: "#00BCD4",
+  blue: "#2196F3",
+  fuchsia: "#E040FB",
+  gray: "#787B86",
+  orange: "#FF9800",
+  purple: "#9C27B0",
+  red: "#F23645",
+  silver: "#B2B5BE",
+  teal: "#089981",
+  yellow: "#FDD835",
 };
 
-const INDICATOR_COLORS = [
-  "#f5a623",
-  "#4aa3ff",
-  "#63d471",
-  "#ff7a59",
-  "#bf7cff",
-  "#ffcc66",
-  "#37c3ff",
-  "#e56b8a",
-  "#5bc0be",
+const DEFAULT_INDICATOR_STYLES = {
+  VOLUME: { color: TV_COLORS.gray, upColor: TV_COLORS.teal, downColor: TV_COLORS.red },
+  SMA: { color: TV_COLORS.blue },
+  EMA: { color: TV_COLORS.orange },
+  WMA: { color: TV_COLORS.purple },
+  VWAP: { color: TV_COLORS.blue, bandColor: "#00E676", fillColor: "#00E676" },
+  RSI: { color: TV_COLORS.purple, maColor: TV_COLORS.yellow },
+  MACD: {
+    color: TV_COLORS.blue,
+    signalColor: TV_COLORS.orange,
+    histogramUpColor: TV_COLORS.teal,
+    histogramDownColor: TV_COLORS.red,
+  },
+  BBANDS: {
+    color: TV_COLORS.blue,
+    upperColor: TV_COLORS.blue,
+    middleColor: TV_COLORS.orange,
+    lowerColor: TV_COLORS.blue,
+  },
+};
+
+const FALLBACK_INDICATOR_COLORS = [
+  TV_COLORS.blue,
+  TV_COLORS.orange,
+  TV_COLORS.purple,
+  TV_COLORS.aqua,
+  TV_COLORS.yellow,
+  TV_COLORS.fuchsia,
+  TV_COLORS.silver,
+  TV_COLORS.teal,
 ];
 
 const MIN_BAR_SPACING = 4;
@@ -41,12 +85,13 @@ const MAX_INITIAL_BARS = 1200;
 const MIN_BATCH_BARS = 150;
 const MAX_BATCH_BARS = 800;
 
-const PRICE_PANE_MIN_HEIGHT = 360;
-const VOLUME_PANE_HEIGHT = 90;
-const RSI_PANE_HEIGHT = 120;
-const MACD_PANE_HEIGHT = 130;
+const PRICE_PANE_MIN_HEIGHT = 240;
+const RSI_PANE_MIN_HEIGHT = 90;
+const MACD_PANE_MIN_HEIGHT = 100;
 
 const RIGHT_PRICE_SCALE_WIDTH = 82;
+const CROSSHAIR_LABEL_BACKGROUND = "#263244";
+const LINE_WIDTH_OPTIONS = [1, 2, 3, 4];
 
 function clampPeriod(value) {
   const parsed = Number.parseInt(value, 10);
@@ -56,11 +101,37 @@ function clampPeriod(value) {
   return Math.max(2, Math.min(parsed, 400));
 }
 
+function clampPositiveInt(value, fallback = null, min = 1, max = 400) {
+  const parsed = Number.parseInt(value, 10);
+  if (!Number.isFinite(parsed)) {
+    return fallback;
+  }
+  return Math.max(min, Math.min(parsed, max));
+}
+
+function clampFloat(value, fallback = null, min = 0.1, max = 10) {
+  const parsed = Number.parseFloat(value);
+  if (!Number.isFinite(parsed)) {
+    return fallback;
+  }
+  return Math.max(min, Math.min(parsed, max));
+}
+
 function indicatorNeedsPeriod(type) {
-  return true;
+  return type !== "VOLUME";
+}
+
+function hasIndicator(indicators, type) {
+  return indicators.some((indicator) => indicator.type === type);
 }
 
 function defaultPeriodForIndicator(type) {
+  if (type === "VOLUME") {
+    return null;
+  }
+  if (type === "SMA") {
+    return 200;
+  }
   if (type === "RSI") {
     return 14;
   }
@@ -76,12 +147,46 @@ function defaultPeriodForIndicator(type) {
   return 20;
 }
 
-function periodPresetsForIndicator(type) {
-  return INDICATOR_PERIOD_PRESETS[type] || [defaultPeriodForIndicator(type)];
+function defaultIndicatorTimeframe(type) {
+  if (type === "VOLUME") {
+    return "chart";
+  }
+  return "chart";
+}
+
+function defaultColorForIndicator(type, index = 0) {
+  return DEFAULT_INDICATOR_STYLES[type]?.color || FALLBACK_INDICATOR_COLORS[index % FALLBACK_INDICATOR_COLORS.length];
 }
 
 function pickColor(index) {
-  return INDICATOR_COLORS[index % INDICATOR_COLORS.length];
+  return FALLBACK_INDICATOR_COLORS[index % FALLBACK_INDICATOR_COLORS.length];
+}
+
+function effectiveIndicatorColor(type, color, index = 0) {
+  if (type === "VWAP" && color === TV_COLORS.aqua) {
+    return DEFAULT_INDICATOR_STYLES.VWAP.color;
+  }
+  return color || defaultColorForIndicator(type, index);
+}
+
+function effectiveVwapBandColor(color) {
+  if (!color || color === TV_COLORS.silver) {
+    return DEFAULT_INDICATOR_STYLES.VWAP.bandColor;
+  }
+  return color;
+}
+
+function timeframeShortLabel(value) {
+  return TIMEFRAME_OPTIONS.find((option) => option.value === value)?.shortLabel || value;
+}
+
+function groupedTimeframes() {
+  return TIMEFRAME_OPTIONS.reduce((groups, option) => {
+    const current = groups.get(option.group) || [];
+    current.push(option);
+    groups.set(option.group, current);
+    return groups;
+  }, new Map());
 }
 
 function formatPrice(value) {
@@ -96,6 +201,42 @@ function formatVolume(value) {
     return "-";
   }
   return new Intl.NumberFormat(undefined, { maximumFractionDigits: 0 }).format(value);
+}
+
+function formatCandleChange(candle) {
+  if (!candle || candle.open === null || candle.open === undefined || candle.close === null || candle.close === undefined) {
+    return "-";
+  }
+
+  const open = Number(candle.open);
+  const close = Number(candle.close);
+
+  if (!Number.isFinite(open) || !Number.isFinite(close)) {
+    return "-";
+  }
+
+  const diff = close - open;
+  const pct = open === 0 ? 0 : (diff / open) * 100;
+  const sign = diff > 0 ? "+" : "";
+  return `${sign}${diff.toFixed(2)} (${sign}${pct.toFixed(2)}%)`;
+}
+
+function colorWithAlpha(color, alpha) {
+  if (typeof color === "string" && color.startsWith("#")) {
+    const hex = color.slice(1);
+    const normalized = hex.length === 3
+      ? hex.split("").map((char) => `${char}${char}`).join("")
+      : hex;
+
+    if (normalized.length === 6) {
+      const red = Number.parseInt(normalized.slice(0, 2), 16);
+      const green = Number.parseInt(normalized.slice(2, 4), 16);
+      const blue = Number.parseInt(normalized.slice(4, 6), 16);
+      return `rgba(${red}, ${green}, ${blue}, ${alpha})`;
+    }
+  }
+
+  return color;
 }
 
 function normalizeCrosshairTime(rawTime) {
@@ -204,7 +345,7 @@ function estimateBatchLimit(container) {
 }
 
 function rsiPriceFormatter(value) {
-  return Number(value).toFixed(0);
+  return Number(value).toFixed(2);
 }
 
 function macdPriceFormatter(value) {
@@ -225,17 +366,15 @@ function priceFormatter(value) {
   return Number(value).toFixed(2);
 }
 
-function rsiAutoscaleProvider() {
-  return {
-    priceRange: {
-      minValue: 0,
-      maxValue: 100,
-    },
-  };
-}
-
 function createConstantLine(points, value) {
   return points.map((point) => ({
+    time: point.time,
+    value,
+  }));
+}
+
+function createPaneAnchorData(candles, value = 0) {
+  return candles.map((point) => ({
     time: point.time,
     value,
   }));
@@ -262,6 +401,9 @@ function createBaseChart(container, options = {}) {
       autoScale: true,
       minimumWidth: RIGHT_PRICE_SCALE_WIDTH,
     },
+    localization: {
+      timeFormatter: (time) => formatChartTime(normalizeCrosshairTime(time), options.timeframe),
+    },
     timeScale: {
       borderColor: "#1c212d",
       timeVisible: true,
@@ -273,11 +415,13 @@ function createBaseChart(container, options = {}) {
     crosshair: {
       mode: 0,
       vertLine: {
-        color: "rgba(42, 49, 66, 0)",
-        labelVisible: false,
+        color: "rgba(164, 173, 188, 0)",
+        labelVisible: options.timeScaleVisible ?? true,
+        labelBackgroundColor: CROSSHAIR_LABEL_BACKGROUND,
       },
       horzLine: {
         color: "#2a3142",
+        labelBackgroundColor: CROSSHAIR_LABEL_BACKGROUND,
       },
     },
   });
@@ -337,146 +481,465 @@ function paneElementForChart(sourceChart, chartsRef, refs) {
   return null;
 }
 
-  function getActiveCharts(chartsRef) {
-    return Object.values(chartsRef.current).filter(Boolean);
+function getActiveCharts(chartsRef) {
+  return Object.values(chartsRef.current).filter(Boolean);
+}
+
+function syncChartsToLogicalRange(chartsRef, sourceChart, range, chartSyncingRef = null) {
+  if (!range) {
+    return;
   }
 
-  function setAllChartsLogicalRange(chartsRef, range, chartSyncingRef = null) {
-    if (!range) {
+  if (chartSyncingRef) {
+    chartSyncingRef.current = true;
+  }
+
+  getActiveCharts(chartsRef).forEach((targetChart) => {
+    if (targetChart !== sourceChart) {
+      targetChart.timeScale().setVisibleLogicalRange(range);
+    }
+  });
+
+  if (chartSyncingRef) {
+    chartSyncingRef.current = false;
+  }
+}
+
+function setAllChartsLogicalRange(chartsRef, range, chartSyncingRef = null) {
+  if (!range) {
+    return;
+  }
+
+  if (chartSyncingRef) {
+    chartSyncingRef.current = true;
+  }
+
+  getActiveCharts(chartsRef).forEach((chart) => {
+    chart.timeScale().setVisibleLogicalRange(range);
+  });
+
+  if (chartSyncingRef) {
+    chartSyncingRef.current = false;
+  }
+}
+
+function getPrimaryLogicalRange(chartsRef) {
+  const activeCharts = getActiveCharts(chartsRef);
+
+  for (const chart of activeCharts) {
+    const range = chart.timeScale().getVisibleLogicalRange();
+
+    if (
+      range &&
+      Number.isFinite(range.from) &&
+      Number.isFinite(range.to)
+    ) {
+      return range;
+    }
+  }
+
+  return null;
+}
+
+function preserveCurrentLogicalRange(chartsRef, preservedLogicalRangeRef) {
+  const range = getPrimaryLogicalRange(chartsRef);
+
+  if (range) {
+    preservedLogicalRangeRef.current = {
+      from: range.from,
+      to: range.to,
+    };
+  }
+
+  return preservedLogicalRangeRef.current;
+}
+
+function restorePreservedLogicalRange(chartsRef, preservedLogicalRangeRef, chartSyncingRef = null) {
+  const range = preservedLogicalRangeRef.current;
+
+  if (!range) {
+    return;
+  }
+
+  setAllChartsLogicalRange(chartsRef, range, chartSyncingRef);
+}
+
+function setAllChartsTimeScaleVisibility(chartsRef) {
+  const { price, volume, rsi, macd } = chartsRef.current;
+
+  const visibleTimeScaleChart = macd || rsi || volume || price;
+
+  [price, volume, rsi, macd].forEach((chart) => {
+    if (!chart) {
       return;
     }
 
-    if (chartSyncingRef) {
-      chartSyncingRef.current = true;
-    }
+    const isVisibleTimeScale = chart === visibleTimeScaleChart;
 
-    getActiveCharts(chartsRef).forEach((chart) => {
-      chart.timeScale().setVisibleLogicalRange(range);
+    chart.timeScale().applyOptions({
+      visible: isVisibleTimeScale,
     });
+    chart.applyOptions({
+      crosshair: {
+        vertLine: {
+          labelVisible: isVisibleTimeScale,
+          labelBackgroundColor: CROSSHAIR_LABEL_BACKGROUND,
+        },
+        horzLine: {
+          labelBackgroundColor: CROSSHAIR_LABEL_BACKGROUND,
+        },
+      },
+    });
+  });
+}
 
-    if (chartSyncingRef) {
-      window.requestAnimationFrame(() => {
-        chartSyncingRef.current = false;
-      });
-    }
+function setAllChartsTimeFormatter(chartsRef, timeframe) {
+  getActiveCharts(chartsRef).forEach((chart) => {
+    chart.applyOptions({
+      localization: {
+        timeFormatter: (time) => formatChartTime(normalizeCrosshairTime(time), timeframe),
+      },
+    });
+  });
+}
+
+function volumeBarsFromCandles(candles) {
+  return candles.map((bar) => ({
+    time: bar.time,
+    value: bar.volume,
+    color: colorWithAlpha(bar.close >= bar.open ? TV_COLORS.teal : TV_COLORS.red, 0.24),
+  }));
+}
+
+function alignPointsToChartCandles(points, candles) {
+  if (!points?.length || !candles.length) {
+    return [];
   }
 
-  function getPrimaryLogicalRange(chartsRef) {
-    const activeCharts = getActiveCharts(chartsRef);
+  const sortedPoints = [...points].sort((a, b) => a.time - b.time);
+  const aligned = [];
+  let pointIndex = 0;
+  let currentPoint = null;
 
-    for (const chart of activeCharts) {
-      const range = chart.timeScale().getVisibleLogicalRange();
-
-      if (
-        range &&
-        Number.isFinite(range.from) &&
-        Number.isFinite(range.to)
-      ) {
-        return range;
-      }
+  candles.forEach((candle) => {
+    while (pointIndex < sortedPoints.length && sortedPoints[pointIndex].time <= candle.time) {
+      currentPoint = sortedPoints[pointIndex];
+      pointIndex += 1;
     }
 
+    if (currentPoint && Number.isFinite(Number(currentPoint.value))) {
+      aligned.push({
+        time: candle.time,
+        value: currentPoint.value,
+      });
+    }
+  });
+
+  return aligned;
+}
+
+function alignIndicatorOutputToChartCandles(output, candles) {
+  return {
+    ...output,
+    lines: (output.lines || []).map((line) => ({
+      ...line,
+      points: alignPointsToChartCandles(line.points || [], candles),
+    })),
+  };
+}
+
+function pointsByTime(points = []) {
+  return new Map(points.map((point) => [point.time, point]));
+}
+
+function findIndicatorLine(indicator, matcher) {
+  return indicator.lines.find((line) => matcher(line.label));
+}
+
+function removeAllIndicatorSeries(seriesRef) {
+  const indicatorSeriesMap = seriesRef.current.indicators;
+
+  indicatorSeriesMap.forEach((entries) => {
+    entries.forEach((entry) => {
+      try {
+        entry.chart.removeSeries(entry.series);
+      } catch {
+        // ignore stale series
+      }
+    });
+  });
+
+  indicatorSeriesMap.clear();
+}
+
+function chartKeyForChart(chart, chartsRef) {
+  if (chart === chartsRef.current.price) {
+    return "price";
+  }
+
+  if (chart === chartsRef.current.volume) {
+    return "volume";
+  }
+
+  if (chart === chartsRef.current.rsi) {
+    return "rsi";
+  }
+
+  if (chart === chartsRef.current.macd) {
+    return "macd";
+  }
+
+  return null;
+}
+
+function indicatorTypeForChartKey(chartKey) {
+  if (chartKey === "rsi") {
+    return "RSI";
+  }
+
+  if (chartKey === "macd") {
+    return "MACD";
+  }
+
+  return null;
+}
+
+function indicatorCrosshairTarget(chartKey, time, resolvedIndicators, seriesRef) {
+  const indicatorType = indicatorTypeForChartKey(chartKey);
+
+  if (!indicatorType) {
     return null;
   }
 
-  function preserveCurrentLogicalRange(chartsRef, preservedLogicalRangeRef) {
-    const range = getPrimaryLogicalRange(chartsRef);
-
-    if (range) {
-      preservedLogicalRangeRef.current = {
-        from: range.from,
-        to: range.to,
-      };
+  for (const indicator of resolvedIndicators) {
+    if (!indicator.visible || indicator.type !== indicatorType) {
+      continue;
     }
 
-    return preservedLogicalRangeRef.current;
+    const entries = seriesRef.current.indicators.get(indicator.id) || [];
+
+    for (let lineIndex = 0; lineIndex < indicator.lines.length; lineIndex += 1) {
+      const line = indicator.lines[lineIndex];
+      const value = line.valuesByTime.get(time);
+      const entry = entries.find((candidate) => candidate.lineIndex === lineIndex);
+
+      if (entry?.series && value !== undefined && Number.isFinite(Number(value))) {
+        return {
+          series: entry.series,
+          value: Number(value),
+        };
+      }
+    }
   }
 
-  function restorePreservedLogicalRange(chartsRef, preservedLogicalRangeRef, chartSyncingRef = null) {
-    const range = preservedLogicalRangeRef.current;
+  return null;
+}
 
-    if (!range) {
+function crosshairTargetForChart(chart, time, chartsRef, seriesRef, candleByTime, resolvedIndicators) {
+  const chartKey = chartKeyForChart(chart, chartsRef);
+
+  if (!chartKey) {
+    return null;
+  }
+
+  const candle = candleByTime.get(time);
+
+  if (chartKey === "price" && candle && seriesRef.current.candles) {
+    return {
+      series: seriesRef.current.candles,
+      value: candle.close,
+    };
+  }
+
+  if (chartKey === "volume" && candle && seriesRef.current.volume) {
+    return {
+      series: seriesRef.current.volume,
+      value: candle.volume,
+    };
+  }
+
+  return indicatorCrosshairTarget(chartKey, time, resolvedIndicators, seriesRef);
+}
+
+function mirrorCrosshairToCharts(sourceChart, rawTime, chartsRef, seriesRef, candleByTime, resolvedIndicators, crosshairSyncingRef) {
+  const time = normalizeCrosshairTime(rawTime);
+
+  if (crosshairSyncingRef) {
+    crosshairSyncingRef.current = true;
+  }
+
+  if (!time) {
+    getActiveCharts(chartsRef).forEach((chart) => {
+      if (chart !== sourceChart) {
+        chart.clearCrosshairPosition();
+      }
+    });
+
+    if (crosshairSyncingRef) {
+      window.requestAnimationFrame(() => {
+        crosshairSyncingRef.current = false;
+      });
+    }
+    return;
+  }
+
+  getActiveCharts(chartsRef).forEach((targetChart) => {
+    if (targetChart === sourceChart) {
       return;
     }
 
-    setAllChartsLogicalRange(chartsRef, range, chartSyncingRef);
-  }
+    const target = crosshairTargetForChart(
+      targetChart,
+      time,
+      chartsRef,
+      seriesRef,
+      candleByTime,
+      resolvedIndicators,
+    );
 
-  function setAllChartsTimeScaleVisibility(chartsRef) {
-    const { price, volume, rsi, macd } = chartsRef.current;
+    if (target) {
+      targetChart.setCrosshairPosition(target.value, time, target.series);
+    } else {
+      targetChart.clearCrosshairPosition();
+    }
+  });
 
-    const visibleTimeScaleChart = macd || rsi || volume || price;
-
-    [price, volume, rsi, macd].forEach((chart) => {
-      if (!chart) {
-        return;
-      }
-
-      chart.timeScale().applyOptions({
-        visible: chart === visibleTimeScaleChart,
-      });
+  if (crosshairSyncingRef) {
+    window.requestAnimationFrame(() => {
+      crosshairSyncingRef.current = false;
     });
   }
-
-  function volumeBarsFromCandles(candles) {
-    return candles.map((bar) => ({
-      time: bar.time,
-      value: bar.volume,
-      color: bar.close >= bar.open ? "rgba(34, 171, 148, 0.55)" : "rgba(242, 54, 69, 0.55)",
-    }));
-  }
-
-  function removeAllIndicatorSeries(seriesRef) {
-    const indicatorSeriesMap = seriesRef.current.indicators;
-
-    indicatorSeriesMap.forEach((entries) => {
-      entries.forEach((entry) => {
-        try {
-          entry.chart.removeSeries(entry.series);
-        } catch {
-          // ignore stale series
-        }
-      });
-    });
-
-    indicatorSeriesMap.clear();
-  }
+}
 
 function indicatorChipLabel(indicator) {
+  const timeframeSuffix = indicator.timeframeMode === "fixed" && indicator.indicatorTimeframe !== "chart"
+    ? ` ${timeframeShortLabel(indicator.indicatorTimeframe)}`
+    : "";
+  if (indicator.type === "VOLUME") {
+    return "Volume";
+  }
   if (indicator.type === "VWAP") {
-    return "VWAP";
+    return `VWAP${timeframeSuffix}`;
   }
   if (indicator.type === "MACD") {
     const fast = indicator.period || 12;
-    const slow = Math.max(fast + 1, Math.round(fast * 2.2));
-    return `MACD ${fast}/${slow}/9`;
+    const slow = indicator.slowPeriod || Math.max(fast + 1, Math.round(fast * 2.2));
+    const signal = indicator.signalPeriod || 9;
+    return `MACD ${fast}/${slow}/${signal}${timeframeSuffix}`;
   }
-  return `${indicator.type} ${indicator.period}`;
+  return `${indicator.type} ${indicator.period}${timeframeSuffix}`;
 }
 
-function resolveLineColor(indicatorType, label, baseColor, lineIndex) {
+function indicatorPlacement(indicator) {
+  if (indicator.type === "RSI") {
+    return "rsi";
+  }
+  if (indicator.type === "MACD") {
+    return "macd";
+  }
+  return "price";
+}
+
+function createIndicatorDraft(type, index = 0, source = null) {
+  const period = source?.period ?? defaultPeriodForIndicator(type);
+  const slowPeriod = source?.slowPeriod ?? (type === "MACD" ? Math.max(13, Math.round((period || 12) * 2.2)) : "");
+  const style = DEFAULT_INDICATOR_STYLES[type] || {};
+  const selectedTimeframe = source?.timeframeMode === "fixed"
+    ? source?.indicatorTimeframe || "1d"
+    : defaultIndicatorTimeframe(type);
+  return {
+    id: source?.id ?? null,
+    type,
+    period: period === null ? "" : String(period),
+    color: effectiveIndicatorColor(type, source?.color || style.color, index),
+    maPeriod: String(source?.maPeriod ?? (type === "RSI" ? period : "")),
+    maColor: source?.maColor || style.maColor || TV_COLORS.yellow,
+    slowPeriod: slowPeriod === "" ? "" : String(slowPeriod),
+    signalPeriod: String(source?.signalPeriod ?? (type === "MACD" ? 9 : "")),
+    signalColor: source?.signalColor || style.signalColor || TV_COLORS.orange,
+    histogramUpColor: source?.histogramUpColor || style.histogramUpColor || TV_COLORS.teal,
+    histogramDownColor: source?.histogramDownColor || style.histogramDownColor || TV_COLORS.red,
+    stdDev: String(source?.stdDev ?? (type === "BBANDS" ? 2 : "")),
+    upperColor: source?.upperColor || style.upperColor || TV_COLORS.blue,
+    middleColor: source?.middleColor || style.middleColor || source?.color || defaultColorForIndicator(type, index),
+    lowerColor: source?.lowerColor || style.lowerColor || TV_COLORS.blue,
+    bandColor: type === "VWAP" ? effectiveVwapBandColor(source?.bandColor || style.bandColor) : source?.bandColor || style.bandColor || TV_COLORS.silver,
+    indicatorTimeframe: selectedTimeframe,
+    lineWidth: String(source?.lineWidth || 1),
+  };
+}
+
+function indicatorTypeMeta(type) {
+  return INDICATOR_TYPES.find((indicator) => indicator.type === type);
+}
+
+function EyeIcon({ open }) {
+  if (!open) {
+    return (
+      <svg viewBox="0 0 20 20" aria-hidden="true">
+        <path d="M3 3l14 14" />
+        <path d="M8.1 5.4A7.8 7.8 0 0 1 10 5c4 0 7 4 7 5a8.7 8.7 0 0 1-2.2 2.8" />
+        <path d="M11.7 11.7A2.4 2.4 0 0 1 6.6 8.6" />
+        <path d="M5.8 7.1C4.1 8.2 3 9.5 3 10c0 1 3 5 7 5 1 0 2-.2 2.9-.6" />
+      </svg>
+    );
+  }
+
+  return (
+    <svg viewBox="0 0 20 20" aria-hidden="true">
+      <path d="M3 10c0-1 3-5 7-5s7 4 7 5-3 5-7 5-7-4-7-5Z" />
+      <circle cx="10" cy="10" r="2.3" />
+    </svg>
+  );
+}
+
+function CogIcon() {
+  return (
+    <svg viewBox="0 0 20 20" aria-hidden="true">
+      <circle cx="10" cy="10" r="2.7" />
+      <path d="M10 2.7v2M10 15.3v2M4.8 4.8l1.4 1.4M13.8 13.8l1.4 1.4M2.7 10h2M15.3 10h2M4.8 15.2l1.4-1.4M13.8 6.2l1.4-1.4" />
+    </svg>
+  );
+}
+
+function CloseIcon() {
+  return (
+    <svg viewBox="0 0 20 20" aria-hidden="true">
+      <path d="M5 5l10 10M15 5 5 15" />
+    </svg>
+  );
+}
+
+function resolveLineColor(indicatorType, label, baseColor, lineIndex, config = {}) {
   if (indicatorType === "MACD") {
     if (label === "Signal") {
-      return "#7da2ff";
+      return config.signalColor || DEFAULT_INDICATOR_STYLES.MACD.signalColor;
     }
     if (label === "Histogram") {
-      return "#94a6cc";
+      return TV_COLORS.silver;
     }
     return baseColor;
   }
 
+  if (indicatorType === "RSI" && lineIndex === 1) {
+    return config.maColor || DEFAULT_INDICATOR_STYLES.RSI.maColor;
+  }
+
   if (indicatorType === "BBANDS") {
     if (lineIndex === 0) {
-      return "#7da2ff";
+      return config.upperColor || DEFAULT_INDICATOR_STYLES.BBANDS.upperColor;
+    }
+    if (lineIndex === 1) {
+      return config.middleColor || baseColor;
     }
     if (lineIndex === 2) {
-      return "#f5a623";
+      return config.lowerColor || DEFAULT_INDICATOR_STYLES.BBANDS.lowerColor;
     }
   }
 
   if (indicatorType === "VWAP") {
     if (lineIndex === 1 || lineIndex === 2) {
-      return "#7da2ff";
+      return effectiveVwapBandColor(config.bandColor);
     }
   }
 
@@ -492,16 +955,18 @@ export default function StockPage() {
   const [chartError, setChartError] = useState("");
   const [indicatorError, setIndicatorError] = useState("");
   const [loading, setLoading] = useState(false);
-  const [showVolume, setShowVolume] = useState(true);
   const [candles, setCandles] = useState([]);
   const [cursorTime, setCursorTime] = useState(null);
 
-  const [indicatorType, setIndicatorType] = useState("SMA");
-  const [indicatorPeriodChoice, setIndicatorPeriodChoice] = useState("20");
-  const [customPeriodInput, setCustomPeriodInput] = useState("20");
+  const [timeframeMenuOpen, setTimeframeMenuOpen] = useState(false);
+  const [indicatorPickerOpen, setIndicatorPickerOpen] = useState(false);
+  const [indicatorSettingsOpen, setIndicatorSettingsOpen] = useState(false);
+  const [indicatorDraft, setIndicatorDraft] = useState(() => createIndicatorDraft("SMA", 0));
+  const [paneHeights, setPaneHeights] = useState({ rsi: 140, macd: 150 });
 
   const [indicators, setIndicators] = useState([
-    { id: "sma-20-default", type: "SMA", period: 20, color: pickColor(0), visible: true },
+    { id: "volume-default", type: "VOLUME", period: null, color: DEFAULT_INDICATOR_STYLES.VOLUME.color, lineWidth: 1, visible: true, timeframeMode: "chart", indicatorTimeframe: "chart" },
+    { id: "sma-200-default", type: "SMA", period: 200, color: DEFAULT_INDICATOR_STYLES.SMA.color, lineWidth: 1, visible: true, timeframeMode: "chart", indicatorTimeframe: "chart" },
   ]);
   const [indicatorOutputs, setIndicatorOutputs] = useState([]);
   const [paneReady, setPaneReady] = useState({
@@ -512,7 +977,7 @@ export default function StockPage() {
 
   const shellRef = useRef(null);
   const priceContainerRef = useRef(null);
-  const volumeContainerRef = useRef(null);
+  const vwapFillCanvasRef = useRef(null);
   const rsiContainerRef = useRef(null);
   const macdContainerRef = useRef(null);
 
@@ -523,15 +988,22 @@ export default function StockPage() {
     macd: null,
   });
   const chartSyncingRef = useRef(false);
+  const crosshairSyncingRef = useRef(false);
   const pendingPaneInitRef = useRef(null);
   const sharedCrosshairRef = useRef(null);
   const lastCrosshairTimeRef = useRef(null);
+  const lastCrosshairSourceRef = useRef(null);
+  const lastCrosshairPointRef = useRef(null);
   const preservedLogicalRangeRef = useRef(null);
   const lastLoadedMetaRef = useRef({ ticker: "", timeframe: "" });
   const viewportSnapshotRef = useRef(null);
   const seriesRef = useRef({
     candles: null,
     volume: null,
+    paneAnchors: {
+      rsi: null,
+      macd: null,
+    },
     indicators: new Map(),
   });
   const loadingOlderRef = useRef(false);
@@ -549,11 +1021,12 @@ export default function StockPage() {
     () =>
       indicatorOutputs.map((output, outputIndex) => {
         const config = indicatorConfigById.get(output.id);
-        const baseColor = config?.color || pickColor(outputIndex);
+        const baseColor = effectiveIndicatorColor(output.type, config?.color, outputIndex);
+        const lineWidth = config?.lineWidth || 1;
         const visible = config?.visible ?? true;
 
         const lines = (output.lines || []).map((line, lineIndex) => {
-          const color = resolveLineColor(output.type, line.label, baseColor, lineIndex);
+          const color = resolveLineColor(output.type, line.label, baseColor, lineIndex, config);
           const valuesByTime = new Map((line.points || []).map((point) => [point.time, point.value]));
           return {
             ...line,
@@ -566,15 +1039,20 @@ export default function StockPage() {
           ...output,
           visible,
           baseColor,
+          lineWidth,
+          histogramUpColor: config?.histogramUpColor || DEFAULT_INDICATOR_STYLES.MACD.histogramUpColor,
+          histogramDownColor: config?.histogramDownColor || DEFAULT_INDICATOR_STYLES.MACD.histogramDownColor,
           lines,
         };
       }),
     [indicatorOutputs, indicatorConfigById],
   );
 
-  const showRsiPane = useMemo(() => hasVisibleIndicator(indicators, "RSI"), [indicators]);
+  const showRsiPane = useMemo(() => hasIndicator(indicators, "RSI"), [indicators]);
 
-  const showMacdPane = useMemo(() => hasVisibleIndicator(indicators, "MACD"), [indicators]);
+  const showMacdPane = useMemo(() => hasIndicator(indicators, "MACD"), [indicators]);
+
+  const showVolume = useMemo(() => hasVisibleIndicator(indicators, "VOLUME"), [indicators]);
 
   const candleByTime = useMemo(() => {
     const map = new Map();
@@ -589,34 +1067,62 @@ export default function StockPage() {
     const resolvedTime = cursorTime && candleByTime.has(cursorTime) ? cursorTime : fallbackTime;
     const candle = resolvedTime ? candleByTime.get(resolvedTime) : null;
 
-    const activeIndicatorValues = resolvedIndicators
-      .filter((indicator) => indicator.visible)
-      .flatMap((indicator) =>
-        indicator.lines.map((line) => ({
-          id: `${indicator.id}-${line.id}`,
-          label: line.label,
-          color: line.color,
-          value: resolvedTime ? line.valuesByTime.get(resolvedTime) : undefined,
-        })),
-      );
-
     return {
       time: resolvedTime,
       candle,
-      activeIndicatorValues,
     };
-  }, [candles, candleByTime, cursorTime, resolvedIndicators]);
+  }, [candles, candleByTime, cursorTime]);
+
+  const indicatorSummaries = useMemo(
+    () =>
+      indicators.map((indicator) => {
+        if (indicator.type === "VOLUME") {
+          return {
+            ...indicator,
+            placement: "price",
+            values: indicator.visible && cursorSnapshot.candle
+              ? [{ id: `${indicator.id}-volume`, value: formatVolume(cursorSnapshot.candle.volume), color: cursorSnapshot.candle.close >= cursorSnapshot.candle.open ? TV_COLORS.teal : TV_COLORS.red }]
+              : [],
+          };
+        }
+
+        const resolved = resolvedIndicators.find((candidate) => candidate.id === indicator.id);
+        const values = resolved?.lines
+          .map((line) => {
+            const value = cursorSnapshot.time ? line.valuesByTime.get(cursorSnapshot.time) : undefined;
+            return {
+              id: `${indicator.id}-${line.id}`,
+              value: formatPrice(value),
+              color: line.color,
+            };
+          }) || [];
+
+        return {
+          ...indicator,
+          placement: indicatorPlacement(indicator),
+          values: indicator.visible ? values : [],
+        };
+      }),
+    [indicators, cursorSnapshot, resolvedIndicators],
+  );
+
+  const indicatorSummariesByPane = useMemo(
+    () => ({
+      price: indicatorSummaries.filter((indicator) => indicator.placement === "price"),
+      rsi: indicatorSummaries.filter((indicator) => indicator.placement === "rsi"),
+      macd: indicatorSummaries.filter((indicator) => indicator.placement === "macd"),
+    }),
+    [indicatorSummaries],
+  );
 
   const candleTone = useMemo(() => getCandleTone(cursorSnapshot.candle), [cursorSnapshot.candle]);
 
-  const activePeriodPresets = useMemo(() => periodPresetsForIndicator(indicatorType), [indicatorType]);
-  const needsPeriod = indicatorNeedsPeriod(indicatorType);
+  const timeframeGroups = useMemo(() => Array.from(groupedTimeframes().entries()), []);
 
-  useEffect(() => {
-    const firstPreset = String(periodPresetsForIndicator(indicatorType)[0]);
-    setIndicatorPeriodChoice(firstPreset);
-    setCustomPeriodInput(firstPreset);
-  }, [indicatorType]);
+  const activeIndicatorMeta = useMemo(
+    () => indicatorTypeMeta(indicatorDraft.type),
+    [indicatorDraft.type],
+  );
 
   useEffect(() => {
     if (!priceContainerRef.current) {
@@ -624,16 +1130,17 @@ export default function StockPage() {
     }
 
     const priceChart = createBaseChart(priceContainerRef.current, {
-      timeScaleVisible: !showVolume && !showRsiPane && !showMacdPane,
+      timeScaleVisible: !showRsiPane && !showMacdPane,
+      timeframe,
     });
 
     const candleSeries = priceChart.addCandlestickSeries({
-      upColor: "#22ab94",
-      downColor: "#f23645",
-      borderUpColor: "#22ab94",
-      borderDownColor: "#f23645",
-      wickUpColor: "#22ab94",
-      wickDownColor: "#f23645",
+      upColor: TV_COLORS.teal,
+      downColor: TV_COLORS.red,
+      borderUpColor: TV_COLORS.teal,
+      borderDownColor: TV_COLORS.red,
+      wickUpColor: TV_COLORS.teal,
+      wickDownColor: TV_COLORS.red,
       priceFormat: {
         type: "price",
         precision: 2,
@@ -641,8 +1148,27 @@ export default function StockPage() {
       },
     });
 
+    const volumeSeries = priceChart.addHistogramSeries({
+      priceScaleId: "volume",
+      priceLineVisible: false,
+      lastValueVisible: false,
+      priceFormat: {
+        type: "custom",
+        formatter: formatVolumeScale,
+      },
+    });
+
+    priceChart.priceScale("volume").applyOptions({
+      scaleMargins: {
+        top: 0.78,
+        bottom: 0,
+      },
+      visible: false,
+    });
+
     chartsRef.current.price = priceChart;
     seriesRef.current.candles = candleSeries;
+    seriesRef.current.volume = volumeSeries;
 
     return () => {
       priceChart.remove();
@@ -657,6 +1183,10 @@ export default function StockPage() {
       seriesRef.current = {
         candles: null,
         volume: null,
+        paneAnchors: {
+          rsi: null,
+          macd: null,
+        },
         indicators: new Map(),
       };
     };
@@ -672,45 +1202,26 @@ export default function StockPage() {
         preserveCurrentLogicalRange(chartsRef, preservedLogicalRangeRef) ||
         chartsRef.current.price?.timeScale().getVisibleLogicalRange();
 
-      if (showVolume && volumeContainerRef.current && !chartsRef.current.volume) {
-        const volumeChart = createBaseChart(volumeContainerRef.current, {
-          timeScaleVisible: false,
-        });
-
-        const volumeSeries = volumeChart.addHistogramSeries({
-          priceLineVisible: false,
-          lastValueVisible: true,
-          priceFormat: {
-            type: "custom",
-            formatter: formatVolumeScale,
-          },
-        });
-
-        chartsRef.current.volume = volumeChart;
-        seriesRef.current.volume = volumeSeries;
-
-        volumeChart.priceScale("right").applyOptions({
-          autoScale: true,
-          minimumWidth: RIGHT_PRICE_SCALE_WIDTH,
-          borderColor: "#1c212d",
-          visible: true,
-        });
-
-        if (candles.length) {
-          volumeSeries.setData(volumeBarsFromCandles(candles));
-        }
-      }
-
-      if (!showVolume && chartsRef.current.volume) {
-        chartsRef.current.volume.remove();
-        chartsRef.current.volume = null;
-        seriesRef.current.volume = null;
-      }
+      seriesRef.current.volume?.applyOptions({ visible: showVolume });
 
       if (showRsiPane && rsiContainerRef.current && !chartsRef.current.rsi) {
         const rsiChart = createBaseChart(rsiContainerRef.current, {
           timeScaleVisible: false,
+          timeframe,
         });
+
+        const rsiAnchorSeries = rsiChart.addLineSeries({
+          color: "rgba(0, 0, 0, 0)",
+          lineWidth: 1,
+          priceLineVisible: false,
+          lastValueVisible: false,
+          crosshairMarkerVisible: false,
+          priceFormat: {
+            type: "custom",
+            formatter: rsiPriceFormatter,
+          },
+        });
+        rsiAnchorSeries.setData(createPaneAnchorData(candles, 50));
 
         rsiChart.priceScale("right").applyOptions({
           autoScale: true,
@@ -721,17 +1232,33 @@ export default function StockPage() {
         });
 
         chartsRef.current.rsi = rsiChart;
+        seriesRef.current.paneAnchors.rsi = rsiAnchorSeries;
       }
 
       if (!showRsiPane && chartsRef.current.rsi) {
         chartsRef.current.rsi.remove();
         chartsRef.current.rsi = null;
+        seriesRef.current.paneAnchors.rsi = null;
       }
 
       if (showMacdPane && macdContainerRef.current && !chartsRef.current.macd) {
         const macdChart = createBaseChart(macdContainerRef.current, {
           timeScaleVisible: false,
+          timeframe,
         });
+
+        const macdAnchorSeries = macdChart.addLineSeries({
+          color: "rgba(0, 0, 0, 0)",
+          lineWidth: 1,
+          priceLineVisible: false,
+          lastValueVisible: false,
+          crosshairMarkerVisible: false,
+          priceFormat: {
+            type: "custom",
+            formatter: macdPriceFormatter,
+          },
+        });
+        macdAnchorSeries.setData(createPaneAnchorData(candles, 0));
 
         macdChart.priceScale("right").applyOptions({
           autoScale: true,
@@ -741,11 +1268,13 @@ export default function StockPage() {
         });
 
         chartsRef.current.macd = macdChart;
+        seriesRef.current.paneAnchors.macd = macdAnchorSeries;
       }
 
       if (!showMacdPane && chartsRef.current.macd) {
         chartsRef.current.macd.remove();
         chartsRef.current.macd = null;
+        seriesRef.current.paneAnchors.macd = null;
       }
 
       setAllChartsTimeScaleVisibility(chartsRef);
@@ -774,17 +1303,25 @@ export default function StockPage() {
   }, [showVolume, showRsiPane, showMacdPane]);
 
   useEffect(() => {
-    if (!seriesRef.current.volume || !candles.length) {
+    if (!candles.length) {
       return;
     }
 
-    seriesRef.current.volume.setData(volumeBarsFromCandles(candles));
-  }, [candles, showVolume]);
+    seriesRef.current.volume?.setData(volumeBarsFromCandles(candles));
+    seriesRef.current.volume?.applyOptions({ visible: showVolume });
+    seriesRef.current.paneAnchors.rsi?.setData(createPaneAnchorData(candles, 50));
+    seriesRef.current.paneAnchors.macd?.setData(createPaneAnchorData(candles, 0));
+  }, [candles, showVolume, showRsiPane, showMacdPane]);
+
+  useEffect(() => {
+    setAllChartsTimeFormatter(chartsRef, timeframe);
+  }, [timeframe, paneReady.volume, paneReady.rsi, paneReady.macd]);
 
   useEffect(() => {
     const activeIds = new Set(
       indicators
         .filter((indicator) => indicator.visible)
+        .filter((indicator) => indicator.type !== "VOLUME")
         .map((indicator) => indicator.id),
     );
 
@@ -872,14 +1409,11 @@ export default function StockPage() {
         setCandles(loadedCandles);
         setCursorTime(loadedCandles[loadedCandles.length - 1].time);
         seriesRef.current.candles?.setData(loadedCandles);
+        seriesRef.current.paneAnchors.rsi?.setData(createPaneAnchorData(loadedCandles, 50));
+        seriesRef.current.paneAnchors.macd?.setData(createPaneAnchorData(loadedCandles, 0));
 
-        const volumeBars = loadedCandles.map((bar) => ({
-          time: bar.time,
-          value: bar.volume,
-          color: bar.close >= bar.open ? "rgba(34, 171, 148, 0.55)" : "rgba(242, 54, 69, 0.55)",
-        }));
-
-        seriesRef.current.volume?.setData(volumeBars);
+        seriesRef.current.volume?.setData(volumeBarsFromCandles(loadedCandles));
+        seriesRef.current.volume?.applyOptions({ visible: showVolume });
 
         loadedBoundsRef.current = {
           first: loadedCandles[0].time,
@@ -988,6 +1522,8 @@ export default function StockPage() {
 
             seriesRef.current.candles?.setData(merged);
             seriesRef.current.volume?.setData(volumeBarsFromCandles(merged));
+            seriesRef.current.paneAnchors.rsi?.setData(createPaneAnchorData(merged, 50));
+            seriesRef.current.paneAnchors.macd?.setData(createPaneAnchorData(merged, 0));
 
             loadedBoundsRef.current = {
               first: merged[0]?.time ?? null,
@@ -1040,6 +1576,8 @@ export default function StockPage() {
 
             seriesRef.current.candles?.setData(merged);
             seriesRef.current.volume?.setData(volumeBarsFromCandles(merged));
+            seriesRef.current.paneAnchors.rsi?.setData(createPaneAnchorData(merged, 50));
+            seriesRef.current.paneAnchors.macd?.setData(createPaneAnchorData(merged, 0));
 
             loadedBoundsRef.current = {
               first: merged[0]?.time ?? null,
@@ -1061,15 +1599,27 @@ export default function StockPage() {
         }
 
         if (!chartSyncingRef.current) {
-          chartSyncingRef.current = true;
+          syncChartsToLogicalRange(chartsRef, sourceChart, range, chartSyncingRef);
+        }
 
-          getActiveCharts(chartsRef).forEach((targetChart) => {
-            if (targetChart !== sourceChart) {
-              targetChart.timeScale().setVisibleLogicalRange(range);
-            }
-          });
+        const lastPoint = lastCrosshairPointRef.current;
+        if (lastPoint && lastCrosshairSourceRef.current === sourceChart) {
+          const nextRawTime = sourceChart.timeScale().coordinateToTime(lastPoint.x);
+          const nextTime = normalizeCrosshairTime(nextRawTime);
 
-          chartSyncingRef.current = false;
+          if (nextTime) {
+            setCursorTime(nextTime);
+          }
+
+          mirrorCrosshairToCharts(
+            sourceChart,
+            nextRawTime,
+            chartsRef,
+            seriesRef,
+            candleByTime,
+            resolvedIndicators,
+            crosshairSyncingRef,
+          );
         }
 
         if (debounceId) {
@@ -1108,7 +1658,19 @@ export default function StockPage() {
         chart.timeScale().unsubscribeVisibleLogicalRangeChange(handler);
       });
     };
-  }, [normalizedTicker, timeframe, candles, showVolume, showRsiPane, showMacdPane, paneReady.volume, paneReady.rsi, paneReady.macd]);
+  }, [
+    normalizedTicker,
+    timeframe,
+    candles,
+    showVolume,
+    showRsiPane,
+    showMacdPane,
+    paneReady.volume,
+    paneReady.rsi,
+    paneReady.macd,
+    candleByTime,
+    resolvedIndicators,
+  ]);
 
   useEffect(() => {
     let canceled = false;
@@ -1118,13 +1680,15 @@ export default function StockPage() {
       return undefined;
     }
 
-    if (!indicators.length) {
+    const calculationIndicators = indicators.filter((indicator) => indicator.visible && indicator.type !== "VOLUME");
+
+    if (!calculationIndicators.length) {
       setIndicatorOutputs([]);
       return undefined;
     }
 
-    const wantsRsi = indicators.some((indicator) => indicator.type === "RSI" && indicator.visible);
-    const wantsMacd = indicators.some((indicator) => indicator.type === "MACD" && indicator.visible);
+    const wantsRsi = calculationIndicators.some((indicator) => indicator.type === "RSI");
+    const wantsMacd = calculationIndicators.some((indicator) => indicator.type === "MACD");
 
     if (wantsRsi && !paneReady.rsi) {
       return undefined;
@@ -1146,35 +1710,59 @@ export default function StockPage() {
 
     async function loadIndicators() {
       try {
-        const payload = {
-          timeframe,
-          limit: candles.length,
-          start_time: candles[0].time,
-          end_time: candles[candles.length - 1].time,
-          warmup_bars: 300,
-          indicators: indicators.filter((ind) => ind.visible).map((indicator) => ({
-            id: indicator.id,
-            type: indicator.type,
-            period: indicatorNeedsPeriod(indicator.type) ? indicator.period : null,
-          })),
-        };
+        const groupedByTimeframe = calculationIndicators.reduce((groups, indicator) => {
+          const effectiveTimeframe = indicator.timeframeMode === "fixed" && indicator.indicatorTimeframe !== "chart"
+            ? indicator.indicatorTimeframe
+            : timeframe;
+          const current = groups.get(effectiveTimeframe) || [];
+          current.push(indicator);
+          groups.set(effectiveTimeframe, current);
+          return groups;
+        }, new Map());
 
-        const response = await fetch(`/api/stocks/${encodeURIComponent(normalizedTicker)}/indicators`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify(payload),
-        });
+        const indicatorPayloads = await Promise.all(
+          Array.from(groupedByTimeframe.entries()).map(async ([indicatorTimeframe, groupedIndicators]) => {
+            const payload = {
+              timeframe: indicatorTimeframe,
+              limit: indicatorTimeframe === timeframe ? candles.length : Math.min(5000, Math.max(1200, candles.length * 3)),
+              start_time: indicatorTimeframe === timeframe ? candles[0].time : null,
+              end_time: candles[candles.length - 1].time,
+              warmup_bars: 300,
+              indicators: groupedIndicators.map((indicator) => ({
+                id: indicator.id,
+                type: indicator.type,
+                period: indicatorNeedsPeriod(indicator.type) ? indicator.period : null,
+                ma_period: indicator.type === "RSI" ? indicator.maPeriod : null,
+                slow_period: indicator.type === "MACD" ? indicator.slowPeriod : null,
+                signal_period: indicator.type === "MACD" ? indicator.signalPeriod : null,
+                std_dev: indicator.type === "BBANDS" ? indicator.stdDev : null,
+                band_period: indicator.type === "VWAP" ? indicator.period : null,
+              })),
+            };
 
-        if (!response.ok) {
-          throw new Error(`Failed to load indicators (${response.status})`);
-        }
+            const response = await fetch(`/api/stocks/${encodeURIComponent(normalizedTicker)}/indicators`, {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify(payload),
+            });
 
-        const indicatorPayload = await response.json();
+            if (!response.ok) {
+              throw new Error(`Failed to load indicators (${response.status})`);
+            }
+
+            const indicatorPayload = await response.json();
+            const outputs = indicatorPayload.indicators || [];
+            return indicatorTimeframe === timeframe
+              ? outputs
+              : outputs.map((output) => alignIndicatorOutputToChartCandles(output, candles));
+          }),
+        );
+
         if (!canceled) {
           preserveCurrentLogicalRange(chartsRef, preservedLogicalRangeRef);
-          setIndicatorOutputs(indicatorPayload.indicators || []);
+          setIndicatorOutputs(indicatorPayloads.flat());
         }
       } catch (error) {
         if (!canceled) {
@@ -1258,7 +1846,53 @@ export default function StockPage() {
         return;
       }
 
-      const createdEntries = indicator.lines.map((line, lineIndex) => {
+      const createdEntries = [];
+
+      if (indicator.type === "RSI" && indicator.lines.length > 0 && rsiChart) {
+        const basePoints = indicator.lines[0].points;
+
+        if (basePoints.length > 0) {
+          const oversoldZoneSeries = rsiChart.addHistogramSeries({
+            color: colorWithAlpha(TV_COLORS.red, 0.08),
+            base: 30,
+            priceLineVisible: false,
+            lastValueVisible: false,
+            priceFormat: {
+              type: "custom",
+              formatter: rsiPriceFormatter,
+            },
+          });
+
+          oversoldZoneSeries.setData(createConstantLine(basePoints, 0));
+          oversoldZoneSeries.applyOptions({ visible: indicator.visible });
+          createdEntries.push({
+            chart: rsiChart,
+            series: oversoldZoneSeries,
+            lineIndex: 1000,
+          });
+
+          const overboughtZoneSeries = rsiChart.addHistogramSeries({
+            color: colorWithAlpha(TV_COLORS.teal, 0.08),
+            base: 70,
+            priceLineVisible: false,
+            lastValueVisible: false,
+            priceFormat: {
+              type: "custom",
+              formatter: rsiPriceFormatter,
+            },
+          });
+
+          overboughtZoneSeries.setData(createConstantLine(basePoints, 100));
+          overboughtZoneSeries.applyOptions({ visible: indicator.visible });
+          createdEntries.push({
+            chart: rsiChart,
+            series: overboughtZoneSeries,
+            lineIndex: 1001,
+          });
+        }
+      }
+
+      indicator.lines.forEach((line, lineIndex) => {
         const isMacdHistogram = indicator.type === "MACD" && line.label === "Histogram";
 
         if (isMacdHistogram) {
@@ -1276,20 +1910,23 @@ export default function StockPage() {
             line.points.map((point) => ({
               time: point.time,
               value: point.value,
-              color: point.value >= 0 ? "rgba(34, 171, 148, 0.42)" : "rgba(242, 54, 69, 0.42)",
+              color: point.value >= 0
+                ? colorWithAlpha(indicator.histogramUpColor, 0.42)
+                : colorWithAlpha(indicator.histogramDownColor, 0.42),
             })),
           );
           histogramSeries.applyOptions({ visible: indicator.visible });
-          return {
+          createdEntries.push({
             chart: targetChart,
             series: histogramSeries,
             lineIndex,
-          };
+          });
+          return;
         }
 
         const lineSeries = targetChart.addLineSeries({
           color: line.color,
-          lineWidth: 2,
+          lineWidth: indicator.lineWidth,
           priceLineVisible: false,
           lastValueVisible: indicator.type === "RSI" || indicator.type === "MACD",
           priceFormat:
@@ -1311,114 +1948,20 @@ export default function StockPage() {
 
         lineSeries.setData(line.points);
 
-        if (indicator.type === "RSI") {
-          lineSeries.applyOptions({
-            autoscaleInfoProvider: rsiAutoscaleProvider,
-          });
-        }
-
         lineSeries.applyOptions({ visible: indicator.visible });
-        return {
+        createdEntries.push({
           chart: targetChart,
           series: lineSeries,
           lineIndex,
-        };
+        });
       });
 
       if (indicator.type === "RSI" && indicator.lines.length > 0 && rsiChart) {
         const basePoints = indicator.lines[0].points;
 
         if (basePoints.length > 0) {
-          const rsiZeroAnchor = rsiChart.addLineSeries({
-            color: "rgba(0, 0, 0, 0)",
-            lineWidth: 1,
-            priceLineVisible: false,
-            lastValueVisible: false,
-            priceFormat: {
-              type: "custom",
-              formatter: rsiPriceFormatter,
-            },
-          });
-
-          rsiZeroAnchor.setData(createConstantLine(basePoints, 0));
-          rsiZeroAnchor.applyOptions({
-            visible: indicator.visible,
-            autoscaleInfoProvider: rsiAutoscaleProvider,
-          });
-          createdEntries.push({
-            chart: rsiChart,
-            series: rsiZeroAnchor,
-            lineIndex: 998,
-          });
-
-          const rsiHundredAnchor = rsiChart.addLineSeries({
-            color: "rgba(0, 0, 0, 0)",
-            lineWidth: 1,
-            priceLineVisible: false,
-            lastValueVisible: false,
-            priceFormat: {
-              type: "custom",
-              formatter: rsiPriceFormatter,
-            },
-          });
-
-          rsiHundredAnchor.setData(createConstantLine(basePoints, 100));
-          rsiHundredAnchor.applyOptions({
-            visible: indicator.visible,
-            autoscaleInfoProvider: rsiAutoscaleProvider,
-          });
-          createdEntries.push({
-            chart: rsiChart,
-            series: rsiHundredAnchor,
-            lineIndex: 999,
-          });
-
-          const oversoldZoneSeries = rsiChart.addHistogramSeries({
-            color: "rgba(242, 54, 69, 0.08)",
-            base: 0,
-            priceLineVisible: false,
-            lastValueVisible: false,
-            priceFormat: {
-              type: "custom",
-              formatter: rsiPriceFormatter,
-            },
-          });
-
-          oversoldZoneSeries.setData(createConstantLine(basePoints, 30));
-          oversoldZoneSeries.applyOptions({
-            visible: indicator.visible,
-            autoscaleInfoProvider: rsiAutoscaleProvider,
-          });
-          createdEntries.push({
-            chart: rsiChart,
-            series: oversoldZoneSeries,
-            lineIndex: 1000,
-          });
-
-          const overboughtZoneSeries = rsiChart.addHistogramSeries({
-            color: "rgba(34, 171, 148, 0.08)",
-            base: 70,
-            priceLineVisible: false,
-            lastValueVisible: false,
-            priceFormat: {
-              type: "custom",
-              formatter: rsiPriceFormatter,
-            },
-          });
-
-          overboughtZoneSeries.setData(createConstantLine(basePoints, 100));
-          overboughtZoneSeries.applyOptions({
-            visible: indicator.visible,
-            autoscaleInfoProvider: rsiAutoscaleProvider,
-          });
-          createdEntries.push({
-            chart: rsiChart,
-            series: overboughtZoneSeries,
-            lineIndex: 1001,
-          });
-
           const oversoldLineSeries = rsiChart.addLineSeries({
-            color: "rgba(242, 54, 69, 0.42)",
+            color: colorWithAlpha(TV_COLORS.red, 0.42),
             lineWidth: 1,
             lineStyle: 2,
             priceLineVisible: false,
@@ -1432,7 +1975,6 @@ export default function StockPage() {
           oversoldLineSeries.setData(createConstantLine(basePoints, 30));
           oversoldLineSeries.applyOptions({
             visible: indicator.visible,
-            autoscaleInfoProvider: rsiAutoscaleProvider,
           });
           createdEntries.push({
             chart: rsiChart,
@@ -1441,7 +1983,7 @@ export default function StockPage() {
           });
 
           const overboughtLineSeries = rsiChart.addLineSeries({
-            color: "rgba(34, 171, 148, 0.42)",
+            color: colorWithAlpha(TV_COLORS.teal, 0.42),
             lineWidth: 1,
             lineStyle: 2,
             priceLineVisible: false,
@@ -1455,7 +1997,6 @@ export default function StockPage() {
           overboughtLineSeries.setData(createConstantLine(basePoints, 70));
           overboughtLineSeries.applyOptions({
             visible: indicator.visible,
-            autoscaleInfoProvider: rsiAutoscaleProvider,
           });
           createdEntries.push({
             chart: rsiChart,
@@ -1478,6 +2019,115 @@ export default function StockPage() {
   }, [resolvedIndicators, showRsiPane, showMacdPane, showVolume, paneReady.rsi, paneReady.macd]);
 
   useEffect(() => {
+    const canvas = vwapFillCanvasRef.current;
+    const container = priceContainerRef.current;
+    const priceChart = chartsRef.current.price;
+    const priceSeries = seriesRef.current.candles;
+
+    if (!canvas || !container || !priceChart || !priceSeries) {
+      return undefined;
+    }
+
+    let animationFrame = null;
+    const vwapIndicator = resolvedIndicators.find((indicator) => indicator.visible && indicator.type === "VWAP");
+    const upperLine = vwapIndicator ? findIndicatorLine(vwapIndicator, (label) => label.includes("+1")) : null;
+    const lowerLine = vwapIndicator ? findIndicatorLine(vwapIndicator, (label) => label.includes("-1")) : null;
+    const lowerByTime = pointsByTime(lowerLine?.points || []);
+    const bandPoints = (upperLine?.points || [])
+      .map((upperPoint) => {
+        const lowerPoint = lowerByTime.get(upperPoint.time);
+        if (!lowerPoint) {
+          return null;
+        }
+        return {
+          time: upperPoint.time,
+          upper: upperPoint.value,
+          lower: lowerPoint.value,
+        };
+      })
+      .filter(Boolean);
+
+    const clear = () => {
+      const context = canvas.getContext("2d");
+      const width = container.clientWidth;
+      const height = container.clientHeight;
+      const dpr = window.devicePixelRatio || 1;
+
+      canvas.style.width = `${width}px`;
+      canvas.style.height = `${height}px`;
+      canvas.width = Math.max(1, Math.floor(width * dpr));
+      canvas.height = Math.max(1, Math.floor(height * dpr));
+      context.setTransform(dpr, 0, 0, dpr, 0, 0);
+      context.clearRect(0, 0, width, height);
+    };
+
+    const draw = () => {
+      animationFrame = null;
+      clear();
+
+      if (bandPoints.length < 2) {
+        return;
+      }
+
+      const context = canvas.getContext("2d");
+      const upperCoords = [];
+      const lowerCoords = [];
+
+      bandPoints.forEach((point) => {
+        const x = priceChart.timeScale().timeToCoordinate(point.time);
+        const upperY = priceSeries.priceToCoordinate(point.upper);
+        const lowerY = priceSeries.priceToCoordinate(point.lower);
+
+        if (
+          Number.isFinite(x) &&
+          Number.isFinite(upperY) &&
+          Number.isFinite(lowerY)
+        ) {
+          upperCoords.push({ x, y: upperY });
+          lowerCoords.push({ x, y: lowerY });
+        }
+      });
+
+      if (upperCoords.length < 2 || lowerCoords.length < 2) {
+        return;
+      }
+
+      context.beginPath();
+      context.moveTo(upperCoords[0].x, upperCoords[0].y);
+      upperCoords.slice(1).forEach((point) => {
+        context.lineTo(point.x, point.y);
+      });
+      lowerCoords.slice().reverse().forEach((point) => {
+        context.lineTo(point.x, point.y);
+      });
+      context.closePath();
+      context.fillStyle = colorWithAlpha(DEFAULT_INDICATOR_STYLES.VWAP.fillColor, 0.08);
+      context.fill();
+    };
+
+    const scheduleDraw = () => {
+      if (animationFrame) {
+        return;
+      }
+      animationFrame = window.requestAnimationFrame(draw);
+    };
+
+    const resizeObserver = new ResizeObserver(scheduleDraw);
+    resizeObserver.observe(container);
+    priceChart.timeScale().subscribeVisibleLogicalRangeChange(scheduleDraw);
+    scheduleDraw();
+
+    return () => {
+      if (animationFrame) {
+        window.cancelAnimationFrame(animationFrame);
+      }
+      resizeObserver.disconnect();
+      priceChart.timeScale().unsubscribeVisibleLogicalRangeChange(scheduleDraw);
+      clear();
+    };
+  }, [resolvedIndicators, paneReady.rsi, paneReady.macd]);
+
+  useEffect(() => {
     const charts = getActiveCharts(chartsRef);
 
     if (!charts.length) {
@@ -1497,7 +2147,7 @@ export default function StockPage() {
 
       const sourcePane = paneElementForChart(sourceChart, chartsRef, {
         price: priceContainerRef,
-        volume: volumeContainerRef,
+        volume: priceContainerRef,
         rsi: rsiContainerRef,
         macd: macdContainerRef,
       });
@@ -1519,13 +2169,34 @@ export default function StockPage() {
 
     const handlers = charts.map((chart) => {
       const handler = (param) => {
+        if (crosshairSyncingRef.current) {
+          return;
+        }
+
         const nextTime = normalizeCrosshairTime(param?.time);
 
         if (nextTime) {
           setCursorTime(nextTime);
         }
 
+        if (param?.point && param.time !== undefined) {
+          lastCrosshairSourceRef.current = chart;
+          lastCrosshairPointRef.current = {
+            x: param.point.x,
+            y: param.point.y,
+          };
+        }
+
         updateSharedLine(chart, param);
+        mirrorCrosshairToCharts(
+          chart,
+          param?.time,
+          chartsRef,
+          seriesRef,
+          candleByTime,
+          resolvedIndicators,
+          crosshairSyncingRef,
+        );
       };
 
       chart.subscribeCrosshairMove(handler);
@@ -1540,6 +2211,13 @@ export default function StockPage() {
       if (sharedCrosshairRef.current) {
         sharedCrosshairRef.current.style.display = "none";
       }
+
+      getActiveCharts(chartsRef).forEach((chart) => {
+        chart.clearCrosshairPosition();
+      });
+
+      lastCrosshairSourceRef.current = null;
+      lastCrosshairPointRef.current = null;
     };
 
     shellRef.current?.addEventListener("mouseleave", onMouseLeave);
@@ -1551,38 +2229,97 @@ export default function StockPage() {
 
       shellRef.current?.removeEventListener("mouseleave", onMouseLeave);
     };
-  }, [showVolume, showRsiPane, showMacdPane, paneReady.volume, paneReady.rsi, paneReady.macd]);
+  }, [
+    showVolume,
+    showRsiPane,
+    showMacdPane,
+    paneReady.volume,
+    paneReady.rsi,
+    paneReady.macd,
+    candleByTime,
+    resolvedIndicators,
+  ]);
 
-  const addIndicator = () => {
+  const openIndicatorPicker = () => {
+    setIndicatorPickerOpen(true);
+    setIndicatorSettingsOpen(false);
+  };
+
+  const openNewIndicatorSettings = (type) => {
+    const existing = indicators.find((indicator) => indicator.type === type);
+    setIndicatorDraft(createIndicatorDraft(type, indicators.length, existing || null));
+    setIndicatorPickerOpen(false);
+    setIndicatorSettingsOpen(true);
+  };
+
+  const openEditIndicatorSettings = (indicator) => {
+    setIndicatorDraft(createIndicatorDraft(indicator.type, indicators.length, indicator));
+    setIndicatorPickerOpen(false);
+    setIndicatorSettingsOpen(true);
+  };
+
+  const saveIndicatorSettings = () => {
     preserveCurrentLogicalRange(chartsRef, preservedLogicalRangeRef);
 
-    let period = null;
+    const period = indicatorNeedsPeriod(indicatorDraft.type) ? clampPeriod(indicatorDraft.period) : null;
+    const lineWidth = Math.max(1, Math.min(Number.parseInt(indicatorDraft.lineWidth, 10) || 1, 4));
 
-    if (indicatorNeedsPeriod(indicatorType)) {
-      if (indicatorPeriodChoice === "custom") {
-        period = clampPeriod(customPeriodInput);
-      } else {
-        period = clampPeriod(indicatorPeriodChoice);
-      }
-
-      if (!period) {
-        return;
-      }
+    if (indicatorNeedsPeriod(indicatorDraft.type) && !period) {
+      return;
     }
 
-    setIndicators((current) => {
-      const id = `${indicatorType.toLowerCase()}-${period ?? "na"}-${Date.now()}`;
-      return [
-        ...current,
-        {
-          id,
-          type: indicatorType,
-          period,
-          color: pickColor(current.length),
-          visible: true,
-        },
-      ];
-    });
+    const existingSameType = !indicatorDraft.id && indicatorDraft.type === "VOLUME"
+      ? indicators.find((indicator) => indicator.type === indicatorDraft.type)
+      : null;
+    const targetId = indicatorDraft.id || existingSameType?.id;
+    const timeframeMode = indicatorDraft.indicatorTimeframe === "chart" ? "chart" : "fixed";
+    const settings = {
+      period,
+      color: indicatorDraft.color,
+      lineWidth,
+      visible: true,
+      maPeriod: indicatorDraft.type === "RSI" ? clampPositiveInt(indicatorDraft.maPeriod, period, 2, 400) : null,
+      maColor: indicatorDraft.maColor,
+      slowPeriod: indicatorDraft.type === "MACD" ? Math.max((period || 12) + 1, clampPositiveInt(indicatorDraft.slowPeriod, 26, 2, 400)) : null,
+      signalPeriod: indicatorDraft.type === "MACD" ? clampPositiveInt(indicatorDraft.signalPeriod, 9, 1, 200) : null,
+      signalColor: indicatorDraft.signalColor,
+      histogramUpColor: indicatorDraft.histogramUpColor,
+      histogramDownColor: indicatorDraft.histogramDownColor,
+      stdDev: indicatorDraft.type === "BBANDS" ? clampFloat(indicatorDraft.stdDev, 2, 0.1, 10) : null,
+      upperColor: indicatorDraft.upperColor,
+      middleColor: indicatorDraft.middleColor,
+      lowerColor: indicatorDraft.lowerColor,
+      bandColor: indicatorDraft.bandColor,
+      timeframeMode,
+      indicatorTimeframe: indicatorDraft.indicatorTimeframe,
+    };
+
+    if (targetId) {
+      setIndicators((current) =>
+        current.map((indicator) =>
+          indicator.id === targetId
+            ? {
+                ...indicator,
+                ...settings,
+              }
+            : indicator,
+        ),
+      );
+    } else {
+      setIndicators((current) => {
+        const id = `${indicatorDraft.type.toLowerCase()}-${period}-${Date.now()}`;
+        return [
+          ...current,
+          {
+            id,
+            type: indicatorDraft.type,
+            ...settings,
+          },
+        ];
+      });
+    }
+
+    setIndicatorSettingsOpen(false);
   };
 
   const toggleIndicatorVisibility = (indicatorId) => {
@@ -1606,6 +2343,94 @@ export default function StockPage() {
     setIndicators((current) => current.filter((indicator) => indicator.id !== indicatorId));
   };
 
+  const startPaneResize = (boundary, event) => {
+    event.preventDefault();
+    const startY = event.clientY;
+    const startHeights = { ...paneHeights };
+    const shellHeight = shellRef.current?.getBoundingClientRect().height || 0;
+    const resizeCursor = document.body.style.cursor;
+
+    document.body.style.cursor = "ns-resize";
+
+    const onPointerMove = (moveEvent) => {
+      const deltaY = moveEvent.clientY - startY;
+
+      setPaneHeights((current) => {
+        if (boundary === "rsi-macd") {
+          const combinedHeight = startHeights.rsi + startHeights.macd;
+          const nextRsi = Math.max(
+            RSI_PANE_MIN_HEIGHT,
+            Math.min(startHeights.rsi + deltaY, combinedHeight - MACD_PANE_MIN_HEIGHT),
+          );
+
+          return {
+            ...current,
+            rsi: nextRsi,
+            macd: combinedHeight - nextRsi,
+          };
+        }
+
+        const pane = boundary === "price-rsi" ? "rsi" : "macd";
+        const minimum = pane === "rsi" ? RSI_PANE_MIN_HEIGHT : MACD_PANE_MIN_HEIGHT;
+        const siblingHeight =
+          pane === "rsi" && showMacdPane
+            ? startHeights.macd
+            : pane === "macd" && showRsiPane
+              ? startHeights.rsi
+              : 0;
+        const maximum = shellHeight
+          ? Math.max(minimum, shellHeight - PRICE_PANE_MIN_HEIGHT - siblingHeight)
+          : Number.POSITIVE_INFINITY;
+        const nextHeight = Math.max(minimum, Math.min(startHeights[pane] - deltaY, maximum));
+
+        return {
+          ...current,
+          [pane]: nextHeight,
+        };
+      });
+    };
+
+    const onPointerUp = () => {
+      document.body.style.cursor = resizeCursor;
+      window.removeEventListener("pointermove", onPointerMove);
+      window.removeEventListener("pointerup", onPointerUp);
+    };
+
+    window.addEventListener("pointermove", onPointerMove);
+    window.addEventListener("pointerup", onPointerUp);
+  };
+
+  const renderIndicatorStack = (summaries) => (
+    <div className="chart-indicator-stack">
+      {summaries.map((indicator) => (
+        <div className={`chart-indicator-row ${indicator.visible ? "active" : ""}`} key={indicator.id}>
+          <span className="indicator-dot" style={{ backgroundColor: indicator.color }} />
+          <span className="indicator-name">{indicatorChipLabel(indicator)}</span>
+          <span className="indicator-values">
+            {indicator.values.length ? (
+              indicator.values.map((item) => (
+                <span key={item.id} style={{ color: item.color }}>{item.value}</span>
+              ))
+            ) : (
+              <span className="indicator-value-muted">hidden</span>
+            )}
+          </span>
+          <div className="chart-indicator-actions">
+            <button type="button" onClick={() => toggleIndicatorVisibility(indicator.id)} title={indicator.visible ? "Hide indicator" : "Show indicator"}>
+              <EyeIcon open={indicator.visible} />
+            </button>
+            <button type="button" onClick={() => openEditIndicatorSettings(indicator)} title="Indicator settings">
+              <CogIcon />
+            </button>
+            <button type="button" onClick={() => removeIndicator(indicator.id)} title="Remove indicator">
+              <CloseIcon />
+            </button>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+
   return (
     <main className="stock-page">
       <HeaderBar onSearch={(nextTicker) => navigate(`/stock/${encodeURIComponent(nextTicker)}`)} searchDefault={normalizedTicker} />
@@ -1613,107 +2438,278 @@ export default function StockPage() {
       <section className="chart-stage" aria-label="Stock chart area">
         <div className="chart-titlebar">
           <p>{normalizedTicker || "Unknown symbol"}</p>
+          <div className="titlebar-tools">
+            <div className="menu-anchor">
+              <button
+                className="tv-tool-button active interval-button"
+                type="button"
+                onClick={() => setTimeframeMenuOpen((open) => !open)}
+                aria-expanded={timeframeMenuOpen}
+              >
+                <strong>{timeframeShortLabel(timeframe)}</strong>
+              </button>
+
+              {timeframeMenuOpen && (
+                <div className="tv-dropdown timeframe-dropdown">
+                  {timeframeGroups.map(([group, options]) => (
+                    <div className="dropdown-group" key={group}>
+                      <p>{group}</p>
+                      <div className="dropdown-grid">
+                        {options.map((option) => (
+                          <button
+                            key={option.value}
+                            className={timeframe === option.value ? "selected" : ""}
+                            type="button"
+                            onClick={() => {
+                              preserveCurrentLogicalRange(chartsRef, preservedLogicalRangeRef);
+                              setTimeframe(option.value);
+                              setTimeframeMenuOpen(false);
+                            }}
+                          >
+                            <span>{option.shortLabel}</span>
+                            <small>{option.label}</small>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <button className="tv-tool-button" type="button" onClick={openIndicatorPicker}>
+              <strong>Indicators</strong>
+            </button>
+          </div>
           <Link to="/" className="back-link">Back to movers</Link>
         </div>
 
-        <div className="chart-toolbar">
-          <div className="toolbar-group">
-            <span className="toolbar-label">Interval</span>
-            <div className="chart-tools timeframe-tools">
-              {TIMEFRAME_OPTIONS.map((option) => (
-                <button
-                  key={option.value}
-                  className={`chip ${timeframe === option.value ? "active" : ""}`}
-                  type="button"
-                  onClick={() => setTimeframe(option.value)}
-                >
-                  {option.label}
-                </button>
-              ))}
-            </div>
-          </div>
+        {indicatorPickerOpen && (
+          <div className="modal-backdrop" onMouseDown={() => setIndicatorPickerOpen(false)}>
+            <div className="indicator-modal" role="dialog" aria-modal="true" aria-label="Indicators" onMouseDown={(event) => event.stopPropagation()}>
+              <div className="modal-header">
+                <div>
+                  <h2>Indicators</h2>
+                  <p>Add studies to the chart</p>
+                </div>
+                <button type="button" className="modal-close" onClick={() => setIndicatorPickerOpen(false)}>x</button>
+              </div>
 
-          <div className="toolbar-group">
-            <span className="toolbar-label">Indicators</span>
-            <div className="chart-tools indicator-builder">
-              <select value={indicatorType} onChange={(event) => setIndicatorType(event.target.value)} aria-label="Indicator type">
-                {INDICATOR_TYPES.map((type) => (
-                  <option value={type} key={type}>{type}</option>
+              <div className="indicator-catalog">
+                {INDICATOR_TYPES.map((indicator) => (
+                  <button type="button" key={indicator.type} onClick={() => openNewIndicatorSettings(indicator.type)}>
+                    <strong>{indicator.type}</strong>
+                    <span>{indicator.name}</span>
+                    <small>{indicator.description}</small>
+                  </button>
                 ))}
-              </select>
-
-              <select
-                value={indicatorPeriodChoice}
-                onChange={(event) => setIndicatorPeriodChoice(event.target.value)}
-                aria-label="Indicator period presets"
-                disabled={!needsPeriod}
-              >
-                {needsPeriod ? activePeriodPresets.map((value) => (
-                  <option key={`${indicatorType}-${value}`} value={String(value)}>{value}</option>
-                )) : <option value="none">-</option>}
-                {needsPeriod && <option value="custom">Custom...</option>}
-              </select>
-
-              {needsPeriod && indicatorPeriodChoice === "custom" && (
-                <input
-                  type="number"
-                  min={2}
-                  max={400}
-                  value={customPeriodInput}
-                  onChange={(event) => setCustomPeriodInput(event.target.value)}
-                  aria-label="Custom indicator period"
-                />
-              )}
-
-              <button className="chip active" type="button" onClick={addIndicator}>Add line</button>
-              <button className={`chip ${showVolume ? "active" : ""}`} type="button" onClick={() => { preserveCurrentLogicalRange(chartsRef, preservedLogicalRangeRef); setShowVolume((v) => !v); }}>
-                Volume
-              </button>
+              </div>
             </div>
           </div>
-        </div>
+        )}
 
-        <div className="indicator-list">
-          {indicators.map((indicator) => (
-            <div key={indicator.id} className={`indicator-pill ${indicator.visible ? "active" : ""}`}>
-              <button
-                type="button"
-                className="indicator-visibility"
-                onClick={() => toggleIndicatorVisibility(indicator.id)}
-                title="Toggle visibility"
-              >
-                <span className="indicator-dot" style={{ backgroundColor: indicator.color }} />
-                {indicatorChipLabel(indicator)}
-              </button>
-              <button
-                type="button"
-                className="indicator-remove"
-                onClick={() => removeIndicator(indicator.id)}
-                title="Remove indicator"
-              >
-                x
-              </button>
+        {indicatorSettingsOpen && (
+          <div className="modal-backdrop" onMouseDown={() => setIndicatorSettingsOpen(false)}>
+            <div className="indicator-settings-modal" role="dialog" aria-modal="true" aria-label="Indicator settings" onMouseDown={(event) => event.stopPropagation()}>
+              <div className="modal-header">
+                <div>
+                  <h2>{indicatorDraft.id ? "Edit" : "Add"} {indicatorDraft.type}</h2>
+                  <p>{activeIndicatorMeta?.name}</p>
+                </div>
+                <button type="button" className="modal-close" onClick={() => setIndicatorSettingsOpen(false)}>x</button>
+              </div>
+
+              <div className="settings-grid">
+                {indicatorDraft.type === "VOLUME" && (
+                  <p className="settings-note">Volume bars use each candle's direction for their red/green color.</p>
+                )}
+
+                {indicatorDraft.type !== "VOLUME" && (
+                  <label>
+                    Timeframe
+                    <select
+                      value={indicatorDraft.indicatorTimeframe}
+                      onChange={(event) => setIndicatorDraft((draft) => ({ ...draft, indicatorTimeframe: event.target.value }))}
+                    >
+                      <option value="chart">Follow chart</option>
+                      {TIMEFRAME_OPTIONS.map((option) => (
+                        <option key={option.value} value={option.value}>{option.label}</option>
+                      ))}
+                    </select>
+                  </label>
+                )}
+
+                {indicatorNeedsPeriod(indicatorDraft.type) && (
+                  <label>
+                    {indicatorDraft.type === "MACD" ? "Fast length" : indicatorDraft.type === "RSI" ? "RSI length" : "Period"}
+                    <input
+                      type="number"
+                      min={2}
+                      max={400}
+                      value={indicatorDraft.period}
+                      onChange={(event) => setIndicatorDraft((draft) => ({ ...draft, period: event.target.value }))}
+                    />
+                  </label>
+                )}
+
+                {indicatorDraft.type === "RSI" && (
+                  <>
+                    <label>
+                      RSI MA length
+                      <input
+                        type="number"
+                        min={2}
+                        max={400}
+                        value={indicatorDraft.maPeriod}
+                        onChange={(event) => setIndicatorDraft((draft) => ({ ...draft, maPeriod: event.target.value }))}
+                      />
+                    </label>
+                    <label>
+                      RSI MA color
+                      <input
+                        type="color"
+                        value={indicatorDraft.maColor}
+                        onChange={(event) => setIndicatorDraft((draft) => ({ ...draft, maColor: event.target.value }))}
+                      />
+                    </label>
+                  </>
+                )}
+
+                {indicatorDraft.type === "MACD" && (
+                  <>
+                    <label>
+                      Slow length
+                      <input
+                        type="number"
+                        min={3}
+                        max={400}
+                        value={indicatorDraft.slowPeriod}
+                        onChange={(event) => setIndicatorDraft((draft) => ({ ...draft, slowPeriod: event.target.value }))}
+                      />
+                    </label>
+                    <label>
+                      Signal length
+                      <input
+                        type="number"
+                        min={1}
+                        max={200}
+                        value={indicatorDraft.signalPeriod}
+                        onChange={(event) => setIndicatorDraft((draft) => ({ ...draft, signalPeriod: event.target.value }))}
+                      />
+                    </label>
+                    <label>
+                      Signal color
+                      <input
+                        type="color"
+                        value={indicatorDraft.signalColor}
+                        onChange={(event) => setIndicatorDraft((draft) => ({ ...draft, signalColor: event.target.value }))}
+                      />
+                    </label>
+                    <label>
+                      Histogram up
+                      <input
+                        type="color"
+                        value={indicatorDraft.histogramUpColor}
+                        onChange={(event) => setIndicatorDraft((draft) => ({ ...draft, histogramUpColor: event.target.value }))}
+                      />
+                    </label>
+                    <label>
+                      Histogram down
+                      <input
+                        type="color"
+                        value={indicatorDraft.histogramDownColor}
+                        onChange={(event) => setIndicatorDraft((draft) => ({ ...draft, histogramDownColor: event.target.value }))}
+                      />
+                    </label>
+                  </>
+                )}
+
+                {indicatorDraft.type === "BBANDS" && (
+                  <>
+                    <label>
+                      Standard deviations
+                      <input
+                        type="number"
+                        min={0.1}
+                        max={10}
+                        step={0.1}
+                        value={indicatorDraft.stdDev}
+                        onChange={(event) => setIndicatorDraft((draft) => ({ ...draft, stdDev: event.target.value }))}
+                      />
+                    </label>
+                    <label>
+                      Upper color
+                      <input
+                        type="color"
+                        value={indicatorDraft.upperColor}
+                        onChange={(event) => setIndicatorDraft((draft) => ({ ...draft, upperColor: event.target.value }))}
+                      />
+                    </label>
+                    <label>
+                      Middle color
+                      <input
+                        type="color"
+                        value={indicatorDraft.middleColor}
+                        onChange={(event) => setIndicatorDraft((draft) => ({ ...draft, middleColor: event.target.value }))}
+                      />
+                    </label>
+                    <label>
+                      Lower color
+                      <input
+                        type="color"
+                        value={indicatorDraft.lowerColor}
+                        onChange={(event) => setIndicatorDraft((draft) => ({ ...draft, lowerColor: event.target.value }))}
+                      />
+                    </label>
+                  </>
+                )}
+
+                {indicatorDraft.type === "VWAP" && (
+                  <label>
+                    Band color
+                    <input
+                      type="color"
+                      value={indicatorDraft.bandColor}
+                      onChange={(event) => setIndicatorDraft((draft) => ({ ...draft, bandColor: event.target.value }))}
+                    />
+                  </label>
+                )}
+
+                {indicatorDraft.type !== "VOLUME" && (
+                  <label>
+                    Line color
+                    <input
+                      type="color"
+                      value={indicatorDraft.color}
+                      onChange={(event) => setIndicatorDraft((draft) => ({ ...draft, color: event.target.value }))}
+                    />
+                  </label>
+                )}
+
+                {indicatorDraft.type !== "VOLUME" && (
+                  <label>
+                    Thickness
+                    <select
+                      value={indicatorDraft.lineWidth}
+                      onChange={(event) => setIndicatorDraft((draft) => ({ ...draft, lineWidth: event.target.value }))}
+                    >
+                      {LINE_WIDTH_OPTIONS.map((width) => (
+                        <option key={width} value={String(width)}>{width}px</option>
+                      ))}
+                    </select>
+                  </label>
+                )}
+              </div>
+
+              <div className="modal-actions">
+                <button type="button" className="tv-tool-button" onClick={() => setIndicatorSettingsOpen(false)}>Cancel</button>
+                <button type="button" className="tv-tool-button active" onClick={saveIndicatorSettings}>
+                  {indicatorDraft.id ? "Save" : "Add indicator"}
+                </button>
+              </div>
             </div>
-          ))}
-        </div>
-
-        <div className="chart-infobar">
-          <span className="inf-time"><strong>Time</strong> {formatChartTime(cursorSnapshot.time, timeframe)}</span>
-          <span className={`inf-kv tone-${candleTone}`}><strong>O</strong> {formatPrice(cursorSnapshot.candle?.open)}</span>
-          <span className={`inf-kv tone-${candleTone}`}><strong>H</strong> {formatPrice(cursorSnapshot.candle?.high)}</span>
-          <span className={`inf-kv tone-${candleTone}`}><strong>L</strong> {formatPrice(cursorSnapshot.candle?.low)}</span>
-          <span className={`inf-kv tone-${candleTone}`}><strong>C</strong> {formatPrice(cursorSnapshot.candle?.close)}</span>
-          <span className={`inf-kv tone-${candleTone}`}><strong>V</strong> {formatVolume(cursorSnapshot.candle?.volume)}</span>
-          {cursorSnapshot.activeIndicatorValues.length ? (
-            cursorSnapshot.activeIndicatorValues.map((indicator) => (
-              <span className="inf-indicator" key={indicator.id} style={{ color: indicator.color }}>
-                <strong>{indicator.label}:</strong> {formatPrice(indicator.value)}
-              </span>
-            ))
-          ) : (
-            <span className="muted"><strong>Indicators:</strong> none active</span>
-          )}
-        </div>
+          </div>
+        )}
 
         {loading && <p className="chart-status">Loading candles...</p>}
         {chartError && <p className="chart-error">{chartError}</p>}
@@ -1723,7 +2719,6 @@ export default function StockPage() {
           ref={shellRef}
           className={[
             "chart-shell",
-            showVolume ? "has-volume-pane" : "",
             showRsiPane ? "has-rsi-pane" : "",
             showMacdPane ? "has-macd-pane" : "",
           ].join(" ")}
@@ -1734,30 +2729,51 @@ export default function StockPage() {
             ref={priceContainerRef}
             className="chart-pane chart-pane-price"
             style={{ minHeight: PRICE_PANE_MIN_HEIGHT }}
-          />
+          >
+            <canvas ref={vwapFillCanvasRef} className="vwap-fill-canvas" aria-hidden="true" />
+            {renderIndicatorStack(indicatorSummariesByPane.price)}
 
-          {showVolume && (
-            <div
-              ref={volumeContainerRef}
-              className="chart-pane chart-pane-volume"
-              style={{ height: VOLUME_PANE_HEIGHT }}
-            />
-          )}
+            <div className="chart-readout" aria-live="polite">
+              <span className={`inf-kv tone-${candleTone}`}><strong>O</strong> {formatPrice(cursorSnapshot.candle?.open)}</span>
+              <span className={`inf-kv tone-${candleTone}`}><strong>H</strong> {formatPrice(cursorSnapshot.candle?.high)}</span>
+              <span className={`inf-kv tone-${candleTone}`}><strong>L</strong> {formatPrice(cursorSnapshot.candle?.low)}</span>
+              <span className={`inf-kv tone-${candleTone}`}><strong>C</strong> {formatPrice(cursorSnapshot.candle?.close)}</span>
+              <span className={`inf-kv tone-${candleTone}`}><strong>Chg</strong> {formatCandleChange(cursorSnapshot.candle)}</span>
+            </div>
+          </div>
 
           {showRsiPane && (
             <div
               ref={rsiContainerRef}
               className="chart-pane chart-pane-rsi"
-              style={{ height: RSI_PANE_HEIGHT }}
-            />
+              style={{ height: paneHeights.rsi }}
+            >
+              <div
+                className="pane-resize-handle"
+                role="separator"
+                aria-label="Resize between price and RSI panes"
+                tabIndex={0}
+                onPointerDown={(event) => startPaneResize("price-rsi", event)}
+              />
+              {renderIndicatorStack(indicatorSummariesByPane.rsi)}
+            </div>
           )}
 
           {showMacdPane && (
             <div
               ref={macdContainerRef}
               className="chart-pane chart-pane-macd"
-              style={{ height: MACD_PANE_HEIGHT }}
-            />
+              style={{ height: paneHeights.macd }}
+            >
+              <div
+                className="pane-resize-handle"
+                role="separator"
+                aria-label={showRsiPane ? "Resize between RSI and MACD panes" : "Resize between price and MACD panes"}
+                tabIndex={0}
+                onPointerDown={(event) => startPaneResize(showRsiPane ? "rsi-macd" : "price-macd", event)}
+              />
+              {renderIndicatorStack(indicatorSummariesByPane.macd)}
+            </div>
           )}
         </div>
       </section>

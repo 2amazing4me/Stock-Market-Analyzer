@@ -5,6 +5,11 @@ class IndicatorRequestItem(BaseModel):
     id: str
     type: str
     period: int | None = None
+    ma_period: int | None = None
+    slow_period: int | None = None
+    signal_period: int | None = None
+    std_dev: float | None = None
+    band_period: int | None = None
 
 
 class StockIndicatorsRequest(BaseModel):

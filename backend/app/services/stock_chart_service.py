@@ -15,6 +15,23 @@ TIMEFRAME_DIR_MAP = {
     "1h": "1h",
     "5m": "5min",
 }
+TIMEFRAME_CONFIG = {
+    "5m": {"base": "5m", "rule": None, "base_multiplier": 1},
+    "10m": {"base": "5m", "rule": "10min", "base_multiplier": 2},
+    "15m": {"base": "5m", "rule": "15min", "base_multiplier": 3},
+    "30m": {"base": "5m", "rule": "30min", "base_multiplier": 6},
+    "45m": {"base": "5m", "rule": "45min", "base_multiplier": 9},
+    "1h": {"base": "1h", "rule": None, "base_multiplier": 1},
+    "2h": {"base": "1h", "rule": "2h", "base_multiplier": 2},
+    "3h": {"base": "1h", "rule": "3h", "base_multiplier": 3},
+    "4h": {"base": "1h", "rule": "4h", "base_multiplier": 4},
+    "1d": {"base": "1d", "rule": None, "base_multiplier": 1},
+    "1w": {"base": "1d", "rule": "W-FRI", "base_multiplier": 5},
+    "1mo": {"base": "1d", "rule": "MS", "base_multiplier": 23},
+    "3mo": {"base": "1d", "rule": "3MS", "base_multiplier": 69},
+    "6mo": {"base": "1d", "rule": "6MS", "base_multiplier": 138},
+    "12mo": {"base": "1d", "rule": "12MS", "base_multiplier": 276},
+}
 
 
 def _resolve_instrument_id(ticker: str) -> int:
@@ -48,8 +65,16 @@ def _parse_part_number(file_name: str) -> int:
 def _resolve_timeframe_dir(timeframe: str) -> Path:
     normalized = timeframe.strip().lower()
     if normalized not in TIMEFRAME_DIR_MAP:
-        raise ValueError("Unsupported timeframe. Allowed values: 5m, 1h, 1d")
+        raise ValueError("Unsupported base timeframe. Allowed values: 5m, 1h, 1d")
     return CURATED_BASE_DIR / TIMEFRAME_DIR_MAP[normalized]
+
+
+def _resolve_timeframe_config(timeframe: str) -> dict:
+    normalized = timeframe.strip().lower()
+    if normalized not in TIMEFRAME_CONFIG:
+        allowed = ", ".join(TIMEFRAME_CONFIG.keys())
+        raise ValueError(f"Unsupported timeframe. Allowed values: {allowed}")
+    return TIMEFRAME_CONFIG[normalized]
 
 
 def _part_files_desc(curated_dir: Path) -> list[Path]:
@@ -122,6 +147,32 @@ def _load_candle_frame(
     return df
 
 
+def _aggregate_candle_frame(df: pd.DataFrame, rule: str) -> pd.DataFrame:
+    if df.empty:
+        return df
+
+    working = df.copy()
+    working["datetime"] = pd.to_datetime(working["datetime"])
+    working = working.sort_values("datetime", ascending=True).drop_duplicates(subset=["datetime"], keep="last")
+    working = working.set_index("datetime")
+
+    aggregated = working.resample(rule, label="left", closed="left").agg(
+        {
+            "open": "first",
+            "high": "max",
+            "low": "min",
+            "close": "last",
+            "volume": "sum",
+            "instrument_id": "last",
+        }
+    )
+
+    aggregated = aggregated.dropna(subset=["open", "high", "low", "close"]).reset_index()
+    aggregated["volume"] = aggregated["volume"].fillna(0)
+    aggregated["unix_time"] = aggregated["datetime"].apply(_to_unix_seconds)
+    return aggregated
+
+
 def _to_unix_seconds(value: pd.Timestamp) -> int:
     ts = pd.Timestamp(value)
     if ts.tzinfo is None:
@@ -139,19 +190,46 @@ def get_stock_candle_dataframe(
     after: int | None = None,
 ) -> pd.DataFrame:
     normalized_timeframe = timeframe.strip().lower()
-    _resolve_timeframe_dir(normalized_timeframe)
+    timeframe_config = _resolve_timeframe_config(normalized_timeframe)
+    base_timeframe = str(timeframe_config["base"])
+    aggregation_rule = timeframe_config["rule"]
+    base_multiplier = int(timeframe_config["base_multiplier"])
 
     instrument_id = _resolve_instrument_id(ticker)
+    base_limit = limit
+    if aggregation_rule is not None and limit > 0:
+        base_limit = min(5000, max(limit * base_multiplier + base_multiplier * 4, limit))
+
     df = _load_candle_frame(
         instrument_id=instrument_id,
-        limit=limit,
-        timeframe=normalized_timeframe,
+        limit=base_limit,
+        timeframe=base_timeframe,
         before=before,
         after=after,
     ).copy()
 
+    if aggregation_rule is not None:
+        df = _aggregate_candle_frame(df, str(aggregation_rule))
+
     if "unix_time" not in df.columns:
         df["unix_time"] = df["datetime"].apply(_to_unix_seconds)
+
+    if before is not None:
+        df = df[df["unix_time"] < before]
+
+    if after is not None:
+        df = df[df["unix_time"] > after]
+
+    df = df.sort_values("datetime", ascending=True).drop_duplicates(subset=["datetime"], keep="last")
+
+    if limit > 0:
+        if after is not None and before is None:
+            df = df.head(limit)
+        else:
+            df = df.tail(limit)
+
+    if df.empty:
+        raise LookupError("No candle data found for ticker")
 
     return df
 
