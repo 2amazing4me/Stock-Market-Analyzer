@@ -11,13 +11,22 @@ DATE_FORMAT = "%Y-%m-%d %H:%M:%S"
 def configure_file_logging(
     relative_log_path: str | Path,
     level: int = logging.INFO,
-    include_console: bool = True,
+    include_console: bool = False,
 ) -> Path:
     log_path = LOGS_ROOT / relative_log_path
     log_path.parent.mkdir(parents=True, exist_ok=True)
 
     root_logger = logging.getLogger()
     root_logger.setLevel(level)
+
+    def remove_console_handlers() -> None:
+        for handler in list(root_logger.handlers):
+            if isinstance(handler, logging.StreamHandler) and not isinstance(handler, logging.FileHandler):
+                root_logger.removeHandler(handler)
+                handler.close()
+
+    if not include_console:
+        remove_console_handlers()
 
     resolved_log_path = log_path.resolve()
     for handler in root_logger.handlers:
@@ -42,11 +51,8 @@ def configure_file_logging(
     file_handler.setFormatter(formatter)
     root_logger.addHandler(file_handler)
 
-    has_console_handler = any(
-        isinstance(handler, logging.StreamHandler) and not isinstance(handler, logging.FileHandler)
-        for handler in root_logger.handlers
-    )
-    if include_console and not has_console_handler:
+    if include_console:
+        remove_console_handlers()
         console_handler = logging.StreamHandler()
         console_handler.setLevel(level)
         console_handler.setFormatter(formatter)
