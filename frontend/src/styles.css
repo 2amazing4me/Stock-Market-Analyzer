@@ -360,7 +360,7 @@ body,
   width: 72px;
 }
 
-.menu-anchor {
+.menu-popover {
   position: relative;
 }
 
@@ -410,6 +410,16 @@ body,
 
 .chart-titlebar .tv-tool-button strong {
   color: #d8e1ef;
+}
+
+.chart-titlebar .tv-tool-button svg {
+  width: 15px;
+  height: 15px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
 .chart-titlebar .tv-tool-button:hover,
@@ -474,6 +484,19 @@ body,
   background: #132033;
 }
 
+.dropdown-grid button:disabled {
+  border-color: #1b2230;
+  background: #080c14;
+  color: #697386;
+  cursor: not-allowed;
+  opacity: 0.58;
+}
+
+.dropdown-grid button:disabled:hover {
+  border-color: #1b2230;
+  background: #080c14;
+}
+
 .dropdown-grid button span,
 .dropdown-grid button small {
   display: block;
@@ -487,6 +510,34 @@ body,
   margin-top: 0.14rem;
   color: #8f9ab0;
   font-size: 0.62rem;
+}
+
+.source-info-button {
+  width: 28px;
+  justify-content: center;
+}
+
+.source-info-popover {
+  width: 240px;
+  display: grid;
+  gap: 0.35rem;
+  color: #c5cee0;
+  font-size: 0.74rem;
+}
+
+.source-info-popover strong,
+.source-info-popover span,
+.source-info-popover small {
+  display: block;
+}
+
+.source-info-popover strong {
+  color: #eef4ff;
+}
+
+.source-info-popover small {
+  color: #8995aa;
+  line-height: 1.35;
 }
 
 .indicator-list {
@@ -692,6 +743,10 @@ body,
   width: min(460px, 100%);
 }
 
+.chart-settings-modal {
+  width: min(520px, 100%);
+}
+
 .modal-header {
   display: flex;
   align-items: flex-start;
@@ -803,6 +858,27 @@ body,
 .settings-grid input[type="color"] {
   height: 42px;
   padding: 0.2rem;
+}
+
+.settings-checkbox {
+  display: flex !important;
+  grid-template-columns: none !important;
+  grid-template-rows: none !important;
+  align-items: center;
+  gap: 0.65rem !important;
+  min-height: 36px;
+  color: #d2dbee !important;
+  letter-spacing: 0 !important;
+  text-transform: none !important;
+  font-size: 0.82rem !important;
+}
+
+.settings-checkbox input {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 16px;
+  margin: 0;
+  accent-color: #3b82f6;
 }
 
 .settings-note {
@@ -923,6 +999,15 @@ body,
   overflow: hidden;
 }
 
+.chart-shell.is-loading::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 45;
+  pointer-events: none;
+  background: rgba(4, 5, 7, 0.26);
+}
+
 .shared-crosshair-line {
   position: absolute;
   top: 0;
@@ -951,13 +1036,57 @@ body,
   min-height: 240px;
 }
 
+.chart-settings-button {
+  position: absolute;
+  right: 0.75rem;
+  bottom: 0.7rem;
+  z-index: 35;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border: 1px solid #262d3b;
+  border-radius: 6px;
+  background: rgba(8, 11, 18, 0.86);
+  color: #c5cee0;
+  cursor: pointer;
+  transition: border-color 120ms ease, background-color 120ms ease, color 120ms ease;
+}
+
+.chart-settings-button:hover {
+  border-color: #3b5f9f;
+  background: #111827;
+  color: #eef4ff;
+}
+
+.chart-settings-button svg {
+  width: 17px;
+  height: 17px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.session-background-canvas,
 .vwap-fill-canvas {
   position: absolute;
   inset: 0;
-  z-index: 4;
+  display: block;
   width: 100%;
   height: 100%;
   pointer-events: none;
+  contain: strict;
+}
+
+.session-background-canvas {
+  z-index: 3;
+}
+
+.vwap-fill-canvas {
+  z-index: 4;
 }
 
 .chart-pane-rsi {

@@ -10,7 +10,7 @@ else
 	PROJECT_ROOT=$(cd "$SCRIPT_DIR/.." && pwd)
 fi
 
-LOG_FILE="$PROJECT_ROOT/core/control/logs/data_ingestion/pipeline.log"
+LOG_FILE="$PROJECT_ROOT/logs/core/data_ingestion/pipeline.log"
 
 # Ensure the log directory exists before writing to it.
 mkdir -p "$(dirname "$LOG_FILE")"

@@ -1,8 +1,6 @@
 from pathlib import Path
 
-PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
+from core.control.market_time import PRE_MARKET_START, REGULAR_MARKET_END, REGULAR_MARKET_START
 
-# Eastern Timezone for US stock market hours
-PRE_MARKET_START = "04:00:00"
-REGULAR_MARKET_START = "09:30:00"
-REGULAR_MARKET_END = "16:00:00"
+PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
+LOGS_ROOT = PROJECT_ROOT / "logs"

@@ -14,3 +14,7 @@ class StockCandlesResponse(BaseModel):
     symbol: str
     timeframe: str
     candles: list[Candle]
+    source_mode: str = "local"
+    source_provider: str = "TwelveData"
+    delayed: bool = False
+    delay_minutes: int | None = None

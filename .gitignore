@@ -18,3 +18,12 @@ frontend/dist/
 
 # Editor/IDE
 .vscode/
+
+# Specific files
+ibkr.py
+ibkr_historic.py
+massive_ws.py
+main.py
+
+# Logs
+logs/

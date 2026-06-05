@@ -1,8 +1,11 @@
+import logging
+
 import pandas_market_calendars as mcal
 from datetime import datetime
 
 from core.control.helpers import get_instrument_universe_db_conn
-from core.control.constants import PRE_MARKET_START, REGULAR_MARKET_START, REGULAR_MARKET_END
+from core.control.logging_config import configure_file_logging
+from core.control.market_time import PRE_MARKET_START, REGULAR_MARKET_END, REGULAR_MARKET_START
 from core.strategy.scanner.core.config import ScannerConfig
 from core.strategy.scanner.data.parquet import ParquetDataSource
 from core.strategy.scanner.data.ibkr import IBKRDataSource
@@ -12,6 +15,8 @@ from core.strategy.scanner.filters.volume import AvgVolumeFilter, RelativeVolume
 from core.strategy.scanner.scanners.historical import HistoricalScanner
 from core.strategy.scanner.scanners.intraday import IntradayScanner
 from core.strategy.scanner.scanners.premarket import PremarketScanner
+
+logger = logging.getLogger(__name__)
 
 
 def _is_trading_day(date=None):
@@ -37,7 +42,7 @@ def _get_symbols_to_scan():
             # Format as a list of dictionaries
             return [{"ticker": row[0], "id": row[1]} for row in cur.fetchall()]
     except Exception as e:
-        print(f"Database query error: {e}")
+        logger.error("Database query error: %s", e)
         return []
     finally:
         if conn:
@@ -55,7 +60,7 @@ def _get_tickers_from_ids(filtered_ids, all_symbols):
 def run_premarket_scanner():
     symbols = _get_symbols_to_scan()
     if not symbols:
-        print("No symbols found to scan.")
+        logger.info("No symbols found to scan.")
         return
 
     parquet_source = ParquetDataSource()
@@ -85,7 +90,7 @@ def run_premarket_scanner():
 def run_intraday_scanner():
     symbols = _get_symbols_to_scan()
     if not symbols:
-        print("No symbols found to scan.")
+        logger.info("No symbols found to scan.")
         return
 
     parquet_source = ParquetDataSource()
@@ -120,7 +125,7 @@ def run():
     - Otherwise, do not run any scanner.
     """
     if not _is_trading_day():
-        print("Today is not a trading day. Scanner will not run.")
+        logger.info("Today is not a trading day. Scanner will not run.")
         return
 
     candidates = []
@@ -128,25 +133,23 @@ def run():
     # Get current time in Eastern Timezone
     now = datetime.now(tz=mcal.get_calendar('NYSE').tz).time()
     if PRE_MARKET_START <= now < REGULAR_MARKET_START:
-        print("Running pre-market scanner...")
+        logger.info("Running pre-market scanner...")
         candidates =run_premarket_scanner()
     elif REGULAR_MARKET_START <= now < REGULAR_MARKET_END:
-        print("Running regular market scanner...")
+        logger.info("Running regular market scanner...")
         candidates = run_intraday_scanner()
     else:
-        print("Market is closed. Scanner will not run.")
+        logger.info("Market is closed. Scanner will not run.")
 
-    print(f"Scanner found {len(candidates)} candidates:")
+    logger.info("Scanner found %d candidates:", len(candidates))
     for c in candidates:
-        print(c)
+        logger.info("%s", c)
 
 if __name__ == "__main__":
+    configure_file_logging("core/scanner/scanner.log")
     # run()
     symbols = _get_symbols_to_scan()
     filtered_ids = run_premarket_scanner()
 
-    print("Total symbols scanned:", len(symbols))
-    print("Total candidates found:", len(filtered_ids))
-
-    # print("Filtered IDs:", filtered_ids)
-    # print("Corresponding tickers:", _get_tickers_from_ids(filtered_ids, symbols))
+    logger.info("Total symbols scanned: %d", len(symbols))
+    logger.info("Total candidates found: %d", len(filtered_ids))

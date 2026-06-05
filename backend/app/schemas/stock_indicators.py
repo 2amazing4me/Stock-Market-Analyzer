@@ -1,5 +1,7 @@
 from pydantic import BaseModel, Field
 
+from backend.app.schemas.stock_chart import Candle
+
 
 class IndicatorRequestItem(BaseModel):
     id: str
@@ -18,6 +20,9 @@ class StockIndicatorsRequest(BaseModel):
     start_time: int | None = None
     end_time: int | None = None
     warmup_bars: int = Field(default=250, ge=0, le=1000)
+    include_extended_hours: bool = True
+    adjusted: bool = True
+    candles: list[Candle] | None = None
     indicators: list[IndicatorRequestItem]
 
 

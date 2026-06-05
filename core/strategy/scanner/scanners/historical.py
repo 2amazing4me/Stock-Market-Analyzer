@@ -1,6 +1,11 @@
+import logging
+
 from core.strategy.scanner.data.base import MarketDataSource
 from core.strategy.scanner.filters.base import Filter
 from core.strategy.scanner.indicators.indicators import IndicatorCalculator
+
+logger = logging.getLogger(__name__)
+
 
 class HistoricalScanner:
     def __init__(self, data_source: MarketDataSource, filters: list[Filter]):
@@ -24,6 +29,6 @@ class HistoricalScanner:
             if all(f.apply(symbol, context) for f in self.filters):
                 results.append(symbol)
             else:
-                print(f"Symbol {symbol} failed historical filters with context: {context}")
+                logger.info("Symbol %s failed historical filters with context: %s", symbol, context)
 
         return results

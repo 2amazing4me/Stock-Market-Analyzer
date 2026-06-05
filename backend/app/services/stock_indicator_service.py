@@ -1,18 +1,22 @@
 from __future__ import annotations
 
-import math
-
 import pandas as pd
 
 from backend.app.schemas.stock_indicators import (
     IndicatorLine,
-    IndicatorPoint,
-    IndicatorRequestItem,
     IndicatorSeriesItem,
     StockIndicatorsRequest,
     StockIndicatorsResponse,
 )
 from backend.app.services.stock_chart_service import get_stock_candle_dataframe
+from backend.app.utils.stock_indicator_utils import (
+    find_column,
+    resolve_float,
+    resolve_period,
+    resolve_positive_int,
+    series_from_single_line,
+    to_points,
+)
 
 try:
     import pandas_ta as ta
@@ -23,108 +27,89 @@ except ImportError:  # pragma: no cover
 ALLOWED_INDICATOR_TYPES = {"SMA", "EMA", "WMA", "VWAP", "RSI", "MACD", "BBANDS"}
 
 
-def _find_column(columns: list[str], preferred: str, prefix: str) -> str | None:
-    if preferred in columns:
-        return preferred
-
-    for column in columns:
-        if column.startswith(prefix):
-            return column
-
-    return None
+def _sma(values: pd.Series, period: int) -> pd.Series:
+    return values.rolling(window=period, min_periods=period).mean()
 
 
-def _default_period(indicator_type: str) -> int:
-    if indicator_type == "RSI":
-        return 14
-    if indicator_type == "MACD":
-        return 12
-    if indicator_type == "BBANDS":
-        return 20
-    if indicator_type == "VWAP":
-        return 20
-    return 20
+def _ema(values: pd.Series, period: int) -> pd.Series:
+    return values.ewm(span=period, adjust=False, min_periods=period).mean()
 
 
-def _resolve_period(item: IndicatorRequestItem) -> int:
-    if item.period is None:
-        return _default_period(item.type.upper())
-    return max(2, int(item.period))
-
-
-def _resolve_positive_int(value: int | None, default: int, minimum: int = 1) -> int:
-    if value is None:
-        return default
-    return max(minimum, int(value))
-
-
-def _resolve_float(value: float | None, default: float, minimum: float = 0.1) -> float:
-    if value is None:
-        return default
-    return max(minimum, float(value))
-
-
-def _to_points(
-    unix_times: pd.Series,
-    values: pd.Series,
-    start_time: int | None = None,
-    end_time: int | None = None,
-) -> list[IndicatorPoint]:
-    aligned = pd.concat([unix_times, values], axis=1).dropna()
-    if aligned.empty:
-        return []
-
-    if start_time is not None:
-        aligned = aligned[aligned.iloc[:, 0] >= start_time]
-
-    if end_time is not None:
-        aligned = aligned[aligned.iloc[:, 0] <= end_time]
-
-    points: list[IndicatorPoint] = []
-    for _, row in aligned.iterrows():
-        value = float(row.iloc[1])
-        if not math.isfinite(value):
-            continue
-        points.append(IndicatorPoint(time=int(row.iloc[0]), value=value))
-
-    return points
-
-
-def _series_from_single_line(
-    item: IndicatorRequestItem,
-    label: str,
-    unix_times: pd.Series,
-    line: pd.Series,
-    period: int | None,
-    start_time: int | None = None,
-    end_time: int | None = None,
-) -> IndicatorSeriesItem:
-    return IndicatorSeriesItem(
-        id=item.id,
-        type=item.type.upper(),
-        period=period,
-        lines=[
-            IndicatorLine(
-                id=f"{item.id}-line",
-                label=label,
-                points=_to_points(unix_times, line, start_time=start_time, end_time=end_time),
-            )
-        ],
+def _wma(values: pd.Series, period: int) -> pd.Series:
+    weights = pd.Series(range(1, period + 1), dtype="float64")
+    divisor = float(weights.sum())
+    return values.rolling(window=period, min_periods=period).apply(
+        lambda window: float((window * weights).sum() / divisor),
+        raw=True,
     )
+
+
+def _vwap(high: pd.Series, low: pd.Series, close: pd.Series, volume: pd.Series) -> pd.Series:
+    typical_price = (high + low + close) / 3
+    cumulative_volume = volume.cumsum()
+    return (typical_price * volume).cumsum() / cumulative_volume.replace(0, pd.NA)
+
+
+def _rsi(close: pd.Series, period: int) -> pd.Series:
+    delta = close.diff()
+    gain = delta.clip(lower=0)
+    loss = -delta.clip(upper=0)
+    average_gain = gain.ewm(alpha=1 / period, adjust=False, min_periods=period).mean()
+    average_loss = loss.ewm(alpha=1 / period, adjust=False, min_periods=period).mean()
+    relative_strength = average_gain / average_loss.replace(0, pd.NA)
+    return 100 - (100 / (1 + relative_strength))
+
+
+def _macd(close: pd.Series, fast: int, slow: int, signal: int) -> tuple[pd.Series, pd.Series, pd.Series]:
+    macd_line = _ema(close, fast) - _ema(close, slow)
+    signal_line = _ema(macd_line, signal)
+    histogram = macd_line - signal_line
+    return macd_line, signal_line, histogram
+
+
+def _bbands(close: pd.Series, period: int, std_dev: float) -> tuple[pd.Series, pd.Series, pd.Series]:
+    middle = _sma(close, period)
+    deviation = close.rolling(window=period, min_periods=period).std()
+    upper = middle + deviation * std_dev
+    lower = middle - deviation * std_dev
+    return upper, middle, lower
+
+
+def _frame_from_request_candles(request: StockIndicatorsRequest) -> pd.DataFrame | None:
+    if not request.candles:
+        return None
+
+    rows = [
+        {
+            "datetime": pd.to_datetime(candle.time, unit="s", utc=True),
+            "open": candle.open,
+            "high": candle.high,
+            "low": candle.low,
+            "close": candle.close,
+            "volume": candle.volume,
+            "instrument_id": 0,
+            "unix_time": candle.time,
+        }
+        for candle in request.candles
+    ]
+    frame = pd.DataFrame(rows)
+    frame = frame.sort_values("datetime", ascending=True).drop_duplicates(subset=["datetime"], keep="last")
+    return frame
 
 
 def get_stock_indicators(ticker: str, request: StockIndicatorsRequest) -> StockIndicatorsResponse:
-    if ta is None:
-        raise RuntimeError("pandas_ta is not installed. Install pandas-ta to enable indicator computation.")
-
     load_limit = request.limit + request.warmup_bars
 
-    frame = get_stock_candle_dataframe(
-        ticker=ticker,
-        timeframe=request.timeframe,
-        limit=load_limit,
-        before=request.end_time,
-    )
+    frame = _frame_from_request_candles(request)
+    if frame is None:
+        frame = get_stock_candle_dataframe(
+            ticker=ticker,
+            timeframe=request.timeframe,
+            limit=load_limit,
+            before=request.end_time + 1 if request.end_time is not None else None,
+            include_extended_hours=request.include_extended_hours,
+            adjusted=request.adjusted,
+        )
 
     raw_working = frame.copy().set_index("datetime")
 
@@ -150,12 +135,12 @@ def get_stock_indicators(ticker: str, request: StockIndicatorsRequest) -> StockI
         if indicator_type not in ALLOWED_INDICATOR_TYPES:
             raise ValueError(f"Unsupported indicator type: {item.type}")
 
-        period = _resolve_period(item)
+        period = resolve_period(item)
 
         if indicator_type == "SMA":
-            line = ta.sma(close, length=period)
+            line = ta.sma(close, length=period) if ta is not None else _sma(close, period)
             indicator_results.append(
-                _series_from_single_line(
+                series_from_single_line(
                     item,
                     f"SMA {period}",
                     unix_times,
@@ -168,9 +153,9 @@ def get_stock_indicators(ticker: str, request: StockIndicatorsRequest) -> StockI
             continue
 
         if indicator_type == "EMA":
-            line = ta.ema(close, length=period)
+            line = ta.ema(close, length=period) if ta is not None else _ema(close, period)
             indicator_results.append(
-                _series_from_single_line(
+                series_from_single_line(
                     item,
                     f"EMA {period}",
                     unix_times,
@@ -183,9 +168,9 @@ def get_stock_indicators(ticker: str, request: StockIndicatorsRequest) -> StockI
             continue
 
         if indicator_type == "WMA":
-            line = ta.wma(close, length=period)
+            line = ta.wma(close, length=period) if ta is not None else _wma(close, period)
             indicator_results.append(
-                _series_from_single_line(
+                series_from_single_line(
                     item,
                     f"WMA {period}",
                     unix_times,
@@ -198,8 +183,8 @@ def get_stock_indicators(ticker: str, request: StockIndicatorsRequest) -> StockI
             continue
 
         if indicator_type == "VWAP":
-            line = ta.vwap(high, low, close, volume)
-            band_period = _resolve_positive_int(item.band_period, period, minimum=2)
+            line = ta.vwap(high, low, close, volume) if ta is not None else _vwap(high, low, close, volume)
+            band_period = resolve_positive_int(item.band_period, period, minimum=2)
             stdev = (close - line).rolling(window=band_period, min_periods=band_period).std()
             upper = line + stdev
             lower = line - stdev
@@ -213,17 +198,17 @@ def get_stock_indicators(ticker: str, request: StockIndicatorsRequest) -> StockI
                         IndicatorLine(
                             id=f"{item.id}-vwap",
                             label="VWAP",
-                            points=_to_points(unix_times, line, start_time=request.start_time, end_time=request.end_time),
+                            points=to_points(unix_times, line, start_time=request.start_time, end_time=request.end_time),
                         ),
                         IndicatorLine(
                             id=f"{item.id}-vwap-upper",
                             label="VWAP +1σ",
-                            points=_to_points(unix_times, upper, start_time=request.start_time, end_time=request.end_time),
+                            points=to_points(unix_times, upper, start_time=request.start_time, end_time=request.end_time),
                         ),
                         IndicatorLine(
                             id=f"{item.id}-vwap-lower",
                             label="VWAP -1σ",
-                            points=_to_points(unix_times, lower, start_time=request.start_time, end_time=request.end_time),
+                            points=to_points(unix_times, lower, start_time=request.start_time, end_time=request.end_time),
                         ),
                     ],
                 )
@@ -231,9 +216,9 @@ def get_stock_indicators(ticker: str, request: StockIndicatorsRequest) -> StockI
             continue
 
         if indicator_type == "RSI":
-            ma_period = _resolve_positive_int(item.ma_period, period, minimum=2)
-            line = ta.rsi(close, length=period)
-            ma_line = ta.sma(line, length=ma_period)
+            ma_period = resolve_positive_int(item.ma_period, period, minimum=2)
+            line = ta.rsi(close, length=period) if ta is not None else _rsi(close, period)
+            ma_line = ta.sma(line, length=ma_period) if ta is not None else _sma(line, ma_period)
             indicator_results.append(
                 IndicatorSeriesItem(
                     id=item.id,
@@ -243,7 +228,7 @@ def get_stock_indicators(ticker: str, request: StockIndicatorsRequest) -> StockI
                         IndicatorLine(
                             id=f"{item.id}-rsi",
                             label=f"RSI {period}",
-                            points=_to_points(
+                            points=to_points(
                                 unix_times,
                                 line,
                                 start_time=request.start_time,
@@ -253,7 +238,7 @@ def get_stock_indicators(ticker: str, request: StockIndicatorsRequest) -> StockI
                         IndicatorLine(
                             id=f"{item.id}-rsi-ma",
                             label=f"RSI MA {ma_period}",
-                            points=_to_points(
+                            points=to_points(
                                 unix_times,
                                 ma_line,
                                 start_time=request.start_time,
@@ -267,52 +252,87 @@ def get_stock_indicators(ticker: str, request: StockIndicatorsRequest) -> StockI
 
         if indicator_type == "MACD":
             fast = period
-            slow = max(fast + 1, _resolve_positive_int(item.slow_period, int(round(fast * 2.2)), minimum=2))
-            signal = _resolve_positive_int(item.signal_period, 9, minimum=1)
-            macd = ta.macd(close, fast=fast, slow=slow, signal=signal)
-            if macd is None or macd.empty:
-                macd_lines: list[IndicatorLine] = []
-            else:
-                columns = [str(column) for column in macd.columns]
-                macd_col = _find_column(columns, f"MACD_{fast}_{slow}_{signal}", "MACD_")
-                signal_col = _find_column(columns, f"MACDs_{fast}_{slow}_{signal}", "MACDs_")
-                hist_col = _find_column(columns, f"MACDh_{fast}_{slow}_{signal}", "MACDh_")
-
-                if not macd_col or not signal_col or not hist_col:
-                    macd_lines = []
+            slow = max(fast + 1, resolve_positive_int(item.slow_period, int(round(fast * 2.2)), minimum=2))
+            signal = resolve_positive_int(item.signal_period, 9, minimum=1)
+            if ta is not None:
+                macd = ta.macd(close, fast=fast, slow=slow, signal=signal)
+                if macd is None or macd.empty:
+                    macd_lines: list[IndicatorLine] = []
                 else:
-                    macd_lines = [
-                        IndicatorLine(
-                            id=f"{item.id}-macd",
-                            label=f"MACD {fast}/{slow}/{signal}",
-                            points=_to_points(
-                                unix_times,
-                                macd[macd_col],
-                                start_time=request.start_time,
-                                end_time=request.end_time,
+                    columns = [str(column) for column in macd.columns]
+                    macd_col = find_column(columns, f"MACD_{fast}_{slow}_{signal}", "MACD_")
+                    signal_col = find_column(columns, f"MACDs_{fast}_{slow}_{signal}", "MACDs_")
+                    hist_col = find_column(columns, f"MACDh_{fast}_{slow}_{signal}", "MACDh_")
+
+                    if not macd_col or not signal_col or not hist_col:
+                        macd_lines = []
+                    else:
+                        macd_lines = [
+                            IndicatorLine(
+                                id=f"{item.id}-macd",
+                                label=f"MACD {fast}/{slow}/{signal}",
+                                points=to_points(
+                                    unix_times,
+                                    macd[macd_col],
+                                    start_time=request.start_time,
+                                    end_time=request.end_time,
+                                ),
                             ),
-                        ),
-                        IndicatorLine(
-                            id=f"{item.id}-signal",
-                            label="Signal",
-                            points=_to_points(
-                                unix_times,
-                                macd[signal_col],
-                                start_time=request.start_time,
-                                end_time=request.end_time,
+                            IndicatorLine(
+                                id=f"{item.id}-signal",
+                                label="Signal",
+                                points=to_points(
+                                    unix_times,
+                                    macd[signal_col],
+                                    start_time=request.start_time,
+                                    end_time=request.end_time,
+                                ),
                             ),
-                        ),
-                        IndicatorLine(
-                            id=f"{item.id}-hist",
-                            label="Histogram",
-                            points=_to_points(
-                                unix_times,
-                                macd[hist_col],
-                                start_time=request.start_time,
-                                end_time=request.end_time,
+                            IndicatorLine(
+                                id=f"{item.id}-hist",
+                                label="Histogram",
+                                points=to_points(
+                                    unix_times,
+                                    macd[hist_col],
+                                    start_time=request.start_time,
+                                    end_time=request.end_time,
+                                ),
                             ),
+                        ]
+            else:
+                macd_line, signal_line, histogram = _macd(close, fast, slow, signal)
+                macd_lines = [
+                    IndicatorLine(
+                        id=f"{item.id}-macd",
+                        label=f"MACD {fast}/{slow}/{signal}",
+                        points=to_points(
+                            unix_times,
+                            macd_line,
+                            start_time=request.start_time,
+                            end_time=request.end_time,
                         ),
-                    ]
+                    ),
+                    IndicatorLine(
+                        id=f"{item.id}-signal",
+                        label="Signal",
+                        points=to_points(
+                            unix_times,
+                            signal_line,
+                            start_time=request.start_time,
+                            end_time=request.end_time,
+                        ),
+                    ),
+                    IndicatorLine(
+                        id=f"{item.id}-hist",
+                        label="Histogram",
+                        points=to_points(
+                            unix_times,
+                            histogram,
+                            start_time=request.start_time,
+                            end_time=request.end_time,
+                        ),
+                    ),
+                ]
 
             indicator_results.append(
                 IndicatorSeriesItem(
@@ -325,51 +345,86 @@ def get_stock_indicators(ticker: str, request: StockIndicatorsRequest) -> StockI
             continue
 
         if indicator_type == "BBANDS":
-            std_dev = _resolve_float(item.std_dev, 2.0)
-            bbands = ta.bbands(close, length=period, std=std_dev)
-            if bbands is None or bbands.empty:
-                bb_lines: list[IndicatorLine] = []
-            else:
-                columns = [str(column) for column in bbands.columns]
-                lower_col = _find_column(columns, f"BBL_{period}_{std_dev}", "BBL_")
-                middle_col = _find_column(columns, f"BBM_{period}_{std_dev}", "BBM_")
-                upper_col = _find_column(columns, f"BBU_{period}_{std_dev}", "BBU_")
-
-                if not lower_col or not middle_col or not upper_col:
-                    bb_lines = []
+            std_dev = resolve_float(item.std_dev, 2.0)
+            if ta is not None:
+                bbands = ta.bbands(close, length=period, std=std_dev)
+                if bbands is None or bbands.empty:
+                    bb_lines: list[IndicatorLine] = []
                 else:
-                    bb_lines = [
-                        IndicatorLine(
-                            id=f"{item.id}-upper",
-                            label=f"BB Upper {period}",
-                            points=_to_points(
-                                unix_times,
-                                bbands[upper_col],
-                                start_time=request.start_time,
-                                end_time=request.end_time,
+                    columns = [str(column) for column in bbands.columns]
+                    lower_col = find_column(columns, f"BBL_{period}_{std_dev}", "BBL_")
+                    middle_col = find_column(columns, f"BBM_{period}_{std_dev}", "BBM_")
+                    upper_col = find_column(columns, f"BBU_{period}_{std_dev}", "BBU_")
+
+                    if not lower_col or not middle_col or not upper_col:
+                        bb_lines = []
+                    else:
+                        bb_lines = [
+                            IndicatorLine(
+                                id=f"{item.id}-upper",
+                                label=f"BB Upper {period}",
+                                points=to_points(
+                                    unix_times,
+                                    bbands[upper_col],
+                                    start_time=request.start_time,
+                                    end_time=request.end_time,
+                                ),
                             ),
-                        ),
-                        IndicatorLine(
-                            id=f"{item.id}-middle",
-                            label=f"BB Mid {period}",
-                            points=_to_points(
-                                unix_times,
-                                bbands[middle_col],
-                                start_time=request.start_time,
-                                end_time=request.end_time,
+                            IndicatorLine(
+                                id=f"{item.id}-middle",
+                                label=f"BB Mid {period}",
+                                points=to_points(
+                                    unix_times,
+                                    bbands[middle_col],
+                                    start_time=request.start_time,
+                                    end_time=request.end_time,
+                                ),
                             ),
-                        ),
-                        IndicatorLine(
-                            id=f"{item.id}-lower",
-                            label=f"BB Lower {period}",
-                            points=_to_points(
-                                unix_times,
-                                bbands[lower_col],
-                                start_time=request.start_time,
-                                end_time=request.end_time,
+                            IndicatorLine(
+                                id=f"{item.id}-lower",
+                                label=f"BB Lower {period}",
+                                points=to_points(
+                                    unix_times,
+                                    bbands[lower_col],
+                                    start_time=request.start_time,
+                                    end_time=request.end_time,
+                                ),
                             ),
+                        ]
+            else:
+                upper, middle, lower = _bbands(close, period, std_dev)
+                bb_lines = [
+                    IndicatorLine(
+                        id=f"{item.id}-upper",
+                        label=f"BB Upper {period}",
+                        points=to_points(
+                            unix_times,
+                            upper,
+                            start_time=request.start_time,
+                            end_time=request.end_time,
                         ),
-                    ]
+                    ),
+                    IndicatorLine(
+                        id=f"{item.id}-middle",
+                        label=f"BB Mid {period}",
+                        points=to_points(
+                            unix_times,
+                            middle,
+                            start_time=request.start_time,
+                            end_time=request.end_time,
+                        ),
+                    ),
+                    IndicatorLine(
+                        id=f"{item.id}-lower",
+                        label=f"BB Lower {period}",
+                        points=to_points(
+                            unix_times,
+                            lower,
+                            start_time=request.start_time,
+                            end_time=request.end_time,
+                        ),
+                    ),
+                ]
 
             indicator_results.append(
                 IndicatorSeriesItem(

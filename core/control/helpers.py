@@ -1,8 +1,10 @@
 import os
+import logging
 import psycopg2
 from dotenv import load_dotenv
 
 load_dotenv()
+logger = logging.getLogger(__name__)
 
 def get_instrument_universe_db_conn():
     """
@@ -18,5 +20,5 @@ def get_instrument_universe_db_conn():
         )
         return conn
     except psycopg2.Error as e:
-        print(f"Database connection error: {e}")
+        logger.error("Database connection error: %s", e)
         return None
