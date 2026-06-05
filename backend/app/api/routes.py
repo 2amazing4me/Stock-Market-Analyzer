@@ -1,17 +1,21 @@
 import asyncio
+import json
 from contextlib import suppress
+from urllib.error import HTTPError, URLError
 
-from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, Depends, HTTPException, Response, WebSocket, WebSocketDisconnect
 
 from backend.app.data_sources.massive_stock_chart_source import check_massive_rest_health
 from backend.app.data_sources.massive_stream_manager import massive_stream_manager
 from backend.app.dependencies.common import get_request_id
 from backend.app.schemas.health import HealthResponse
 from backend.app.schemas.market_movers import MarketMoversResponse
+from backend.app.schemas.market_overview import MarketOverviewResponse
 from backend.app.schemas.stock_chart import StockCandlesResponse
 from backend.app.schemas.stock_indicators import StockIndicatorsRequest, StockIndicatorsResponse
 from backend.app.services.health_service import build_health_payload
-from backend.app.services.market_movers_service import get_market_movers
+from backend.app.services.market_movers_service import MARKET_MOVERS_LIMIT, get_market_mover_logo, get_market_movers
+from backend.app.services.market_overview_service import get_market_overview
 from backend.app.services.stock_chart_service import get_stock_candles
 from backend.app.services.stock_indicator_service import get_stock_indicators
 
@@ -25,7 +29,17 @@ def health_check(request_id: str = Depends(get_request_id)) -> HealthResponse:
 
 @router.get("/market-movers", response_model=MarketMoversResponse)
 def market_movers() -> MarketMoversResponse:
-    return get_market_movers(limit=30)
+    return get_market_movers(limit=MARKET_MOVERS_LIMIT)
+
+
+@router.get("/market-movers/logos/{ticker}")
+def market_mover_logo(ticker: str) -> Response:
+    """Returns a proxied market mover logo without exposing provider credentials."""
+    try:
+        content, media_type = get_market_mover_logo(ticker)
+    except Exception as exc:
+        raise HTTPException(status_code=404, detail="Logo unavailable") from exc
+    return Response(content=content, media_type=media_type)
 
 
 @router.get("/market-data/health")
@@ -33,6 +47,15 @@ def market_data_health() -> dict:
     health = check_massive_rest_health()
     health["local_provider"] = "TwelveData"
     return health
+
+
+@router.get("/market-overview", response_model=MarketOverviewResponse)
+def market_overview() -> MarketOverviewResponse:
+    """Returns read-only index and macro overview cards from Yahoo Finance."""
+    try:
+        return get_market_overview()
+    except (LookupError, RuntimeError, TimeoutError, HTTPError, URLError, json.JSONDecodeError) as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
 
 
 @router.websocket("/stocks/{ticker}/stream")

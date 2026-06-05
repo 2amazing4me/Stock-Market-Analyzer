@@ -1,37 +1,67 @@
-export default function MoverList({ title, rows, direction, onOpenTicker }) {
+import { useState } from "react";
+
+const SKELETON_ROWS = Array.from({ length: 10 }, (_, index) => index);
+
+/** Returns compact initials for logo fallbacks. */
+function logoFallback(symbol) {
+  return (symbol || "?").slice(0, 2).toUpperCase();
+}
+
+/** Renders a single market mover tile. */
+function MoverTile({ row, onOpenTicker }) {
+  const positive = row.change_pct >= 0;
+  const canOpen = row.symbol && row.symbol !== "N/A";
+  const [logoFailed, setLogoFailed] = useState(false);
+  const showLogo = row.logo_url && !logoFailed;
+
+  return (
+    <button
+      className={`mover-tile ${canOpen ? "clickable" : "disabled"}`}
+      key={row.symbol}
+      role="listitem"
+      type="button"
+      onClick={() => canOpen && onOpenTicker(row.symbol)}
+      disabled={!canOpen}
+      title={canOpen ? `Open ${row.symbol}` : "Ticker unavailable"}
+    >
+      <div className="mover-logo" aria-hidden="true">
+        {showLogo ? (
+          <img src={row.logo_url} alt="" loading="lazy" onError={() => setLogoFailed(true)} />
+        ) : (
+          <span>{logoFallback(row.symbol)}</span>
+        )}
+      </div>
+      <p className="symbol">{row.symbol}</p>
+      <p className="close">${row.close.toFixed(2)}</p>
+      <p className={positive ? "chg up" : "chg down"}>{positive ? "+" : ""}{row.change_pct.toFixed(2)}%</p>
+    </button>
+  );
+}
+
+/** Renders a single skeleton market mover tile while data loads. */
+function SkeletonTile({ index }) {
+  return (
+    <div className="mover-tile skeleton-tile" role="listitem" aria-hidden="true" key={index}>
+      <div className="mover-logo skeleton-block" />
+      <div className="skeleton-line short" />
+      <div className="skeleton-line medium" />
+      <div className="skeleton-line tiny" />
+    </div>
+  );
+}
+
+/** Displays a compact market movers grid for one movement direction. */
+export default function MoverList({ title, rows, loading = false, onOpenTicker }) {
   return (
     <section className="mover-card">
       <div className="mover-header">
         <h2>{title}</h2>
-        <span className={`pill ${direction}`}>{rows.length} symbols</span>
       </div>
 
       <div className="mover-list" role="list">
-        {rows.map((row, idx) => {
-          const positive = row.change_pct >= 0;
-          const canOpen = row.symbol && row.symbol !== "N/A";
-
-          return (
-            <button
-              className={`mover-row ${canOpen ? "clickable" : "disabled"}`}
-              key={`${row.instrument_id}-${idx}`}
-              role="listitem"
-              type="button"
-              onClick={() => canOpen && onOpenTicker(row.symbol)}
-              disabled={!canOpen}
-              title={canOpen ? `Open ${row.symbol}` : "Ticker unavailable"}
-            >
-              <div>
-                <p className="symbol">{row.symbol}</p>
-                <p className="meta">Vol {row.volume.toLocaleString()}</p>
-              </div>
-              <div className="prices">
-                <p className="close">${row.close.toFixed(2)}</p>
-                <p className={positive ? "chg up" : "chg down"}>{positive ? "+" : ""}{row.change_pct.toFixed(2)}%</p>
-              </div>
-            </button>
-          );
-        })}
+        {loading
+          ? SKELETON_ROWS.map((index) => <SkeletonTile index={index} key={index} />)
+          : rows.map((row) => <MoverTile row={row} key={row.symbol} onOpenTicker={onOpenTicker} />)}
       </div>
     </section>
   );
