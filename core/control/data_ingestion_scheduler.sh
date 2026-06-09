@@ -15,7 +15,7 @@ LOG_FILE="$PROJECT_ROOT/logs/core/data_ingestion/pipeline.log"
 # Ensure the log directory exists before writing to it.
 mkdir -p "$(dirname "$LOG_FILE")"
 
-sleep 10  # wait for the system to stabilize after startup
+sleep 30  # wait for the system to stabilize after startup
 
 echo "==== Run started at $(date) ====" >> "$LOG_FILE"
 
@@ -33,6 +33,13 @@ stdbuf -oL -eL python3 -u -m core.data.market_data_ingestor.market_data_ingestor
 # Step 3: run parquet file manager script
 echo "Running parquet file manager script..." >> "$LOG_FILE"
 stdbuf -oL -eL python3 -u -m core.data.market_data_ingestor.parquet_file_manager >> "$LOG_FILE" 2>&1
+
+# Step 4: temporarily refresh local company logos
+echo "Refreshing local company logos..." >> "$LOG_FILE"
+# smallest -> minimum size between svg and png
+# raster -> only png/jpg
+# svg -> only svg
+stdbuf -oL -eL python3 -u -m core.data.resource_ingestor.logo_fetcher --logo-format raster >> "$LOG_FILE" 2>&1
 popd > /dev/null
 
 echo "==== Run finished at $(date) ====" >> "$LOG_FILE"

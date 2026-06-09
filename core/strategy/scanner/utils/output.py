@@ -24,18 +24,18 @@ def format_candidate_for_log(candidate: dict) -> str:
 
 def format_candidate_for_output(candidate: dict, scanner_name: str) -> str:
     symbol = candidate["symbol"]
-    price = f"${candidate['price']:,.2f}"
-    avg_volume = _format_compact_number(candidate["avg_volume"])
-    atr = f"{candidate['atr']:.2f}"
+    price = f"${candidate.get('price', 0):,.2f}"
+    avg_volume = _format_compact_number(candidate.get("avg_volume", 0))
+    atr = f"{candidate.get('atr', 0):.2f}"
 
     if scanner_name == "premarket":
         change = _format_signed_price(candidate["premarket_price_change"])
         volume = _format_compact_number(candidate["premarket_volume"])
         return f"{symbol:<6} {price:>10}  PM {change:>9}  Vol {volume:>8}  Avg {avg_volume:>8}  ATR {atr:>6}"
 
-    change = _format_signed_price(candidate["price_change"])
-    relative_volume = f"{candidate['relative_volume']:.2f}x"
-    volume = _format_compact_number(candidate["volume"])
+    change = _format_signed_price(candidate.get("price_change", 0))
+    relative_volume = f"{candidate.get('relative_volume', 0):.2f}x"
+    volume = _format_compact_number(candidate.get("volume", 0))
     return (
         f"{symbol:<6} {price:>10}  Chg {change:>9}  RVOL {relative_volume:>6}  "
         f"Vol {volume:>8}  Avg {avg_volume:>8}  ATR {atr:>6}"
@@ -43,6 +43,9 @@ def format_candidate_for_output(candidate: dict, scanner_name: str) -> str:
 
 
 def _format_compact_number(value: float) -> str:
+    """Formats a numeric value compactly for scanner console output."""
+    if value is None:
+        return "--"
     absolute = abs(value)
     if absolute >= 1_000_000_000:
         return f"{value / 1_000_000_000:.2f}B"

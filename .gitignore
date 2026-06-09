@@ -8,6 +8,9 @@ __pycache__/
 # Data (large, not for git)
 core/data/historical_market_data/*
 core/strategy/scanner/cache/*
+core/resources/logos/*
+core/resources/company_metadata.csv
+!core/resources/logos/.gitkeep
 
 # Build artifacts
 *.egg-info/

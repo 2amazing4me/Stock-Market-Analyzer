@@ -8,12 +8,13 @@ from functools import lru_cache
 from datetime import datetime, timezone
 from threading import Lock
 from urllib.error import HTTPError, URLError
-from urllib.parse import urlencode, urlparse
+from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
 import pandas as pd
 
 from backend.app.schemas.market_movers import MarketMover, MarketMoversResponse
+from backend.app.services.logo_service import local_logo_url
 from backend.app.data_sources.massive_stock_chart_source import MASSIVE_REST_BASE_URL
 
 from core.control.constants import PROJECT_ROOT
@@ -21,6 +22,7 @@ from core.control.helpers import get_instrument_universe_db_conn
 
 CURATED_1DAY_DIR = PROJECT_ROOT / "core" / "data" / "historical_market_data" / "curated" / "1day"
 LOCAL_SYMBOLS_CSV = PROJECT_ROOT / "core" / "control" / "data_layer" / "all.csv"
+COMPANY_METADATA_CACHE = PROJECT_ROOT / "core" / "resources" / "company_metadata.csv"
 MARKET_MOVERS_LIMIT = 10
 MARKET_MOVERS_CACHE_SECONDS = 10
 MASSIVE_COMMON_STOCK_CACHE_SECONDS = 60 * 60
@@ -66,6 +68,16 @@ def _load_symbol_map() -> dict[int, str]:
 @lru_cache(maxsize=1)
 def _load_local_company_names() -> dict[str, str]:
     """Loads local ticker to company name mappings for display labels."""
+    if COMPANY_METADATA_CACHE.exists():
+        with COMPANY_METADATA_CACHE.open(newline="", encoding="utf-8") as csv_file:
+            names = {
+                str(row.get("symbol") or "").upper(): str(row.get("name") or "")
+                for row in csv.DictReader(csv_file)
+                if row.get("symbol")
+            }
+        if names:
+            return names
+
     if not LOCAL_SYMBOLS_CSV.exists():
         return {}
 
@@ -243,52 +255,14 @@ def _massive_change_pct(item: dict, close: float) -> float:
         return ((close - previous_close) / previous_close) * 100
 
 
-@lru_cache(maxsize=64)
-def _massive_ticker_metadata(symbol: str) -> dict[str, str]:
-    """Loads cached Massive ticker name and branding metadata."""
-    payload = _request_massive_ticker_details(symbol)
-    result = payload.get("results") or {}
-    branding = result.get("branding") or {}
-    icon_url = str(branding.get("icon_url") or branding.get("logo_url") or "")
-    return {
-        "name": str(result.get("name") or symbol),
-        "type": str(result.get("type") or ""),
-        "branding_url": icon_url,
-    }
-
-
-def _safe_massive_branding_url(url: str) -> str:
-    """Validates that a branding URL points to the Massive API host."""
-    parsed = urlparse(url)
-    if parsed.scheme != "https" or parsed.netloc != "api.massive.com":
-        raise ValueError("Unexpected Massive branding URL")
-    return url
-
-
-def get_market_mover_logo(symbol: str) -> tuple[bytes, str]:
-    """Returns proxied Massive logo bytes for a market mover symbol."""
-    metadata = _massive_ticker_metadata(symbol.upper())
-    branding_url = _safe_massive_branding_url(metadata.get("branding_url", ""))
-    separator = "&" if "?" in branding_url else "?"
-    request = Request(
-        f"{branding_url}{separator}{urlencode({'apiKey': _massive_api_key()})}",
-        headers={"Accept": "image/*"},
-    )
-    with urlopen(request, timeout=8) as response:
-        content_type = response.headers.get("Content-Type", "image/png")
-        return response.read(), content_type
-
-
 def _local_company_name(symbol: str) -> str:
     """Returns a locally cached company name for a symbol."""
     return _load_local_company_names().get(symbol.upper(), symbol.upper())
 
 
 def _market_mover_logo_url(symbol: str) -> str:
-    """Returns a proxied Massive logo URL when logo lookups are configured."""
-    if not _massive_api_key():
-        return ""
-    return f"/api/market-movers/logos/{symbol.upper()}"
+    """Returns a local market mover logo URL when cached."""
+    return local_logo_url(symbol)
 
 
 def _is_local_common_stock(symbol: str) -> bool:

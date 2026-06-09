@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { logoPresentationStyle } from "../lib/logoPresentation";
 
 const SKELETON_ROWS = Array.from({ length: 10 }, (_, index) => index);
 
@@ -12,6 +13,7 @@ function MoverTile({ row, onOpenTicker }) {
   const positive = row.change_pct >= 0;
   const canOpen = row.symbol && row.symbol !== "N/A";
   const [logoFailed, setLogoFailed] = useState(false);
+  const [logoStyle, setLogoStyle] = useState({});
   const showLogo = row.logo_url && !logoFailed;
 
   return (
@@ -24,9 +26,15 @@ function MoverTile({ row, onOpenTicker }) {
       disabled={!canOpen}
       title={canOpen ? `Open ${row.symbol}` : "Ticker unavailable"}
     >
-      <div className="mover-logo" aria-hidden="true">
+      <div className="mover-logo" aria-hidden="true" style={showLogo ? logoStyle : undefined}>
         {showLogo ? (
-          <img src={row.logo_url} alt="" loading="lazy" onError={() => setLogoFailed(true)} />
+          <img
+            src={row.logo_url}
+            alt=""
+            loading="lazy"
+            onLoad={(event) => setLogoStyle(logoPresentationStyle(event.currentTarget))}
+            onError={() => setLogoFailed(true)}
+          />
         ) : (
           <span>{logoFallback(row.symbol)}</span>
         )}

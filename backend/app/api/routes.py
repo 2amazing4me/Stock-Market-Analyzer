@@ -1,9 +1,10 @@
 import asyncio
 import json
+import threading
 from contextlib import suppress
 from urllib.error import HTTPError, URLError
 
-from fastapi import APIRouter, Depends, HTTPException, Response, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, WebSocket, WebSocketDisconnect
 
 from backend.app.data_sources.massive_stock_chart_source import check_massive_rest_health
 from backend.app.data_sources.massive_stream_manager import massive_stream_manager
@@ -11,11 +12,14 @@ from backend.app.dependencies.common import get_request_id
 from backend.app.schemas.health import HealthResponse
 from backend.app.schemas.market_movers import MarketMoversResponse
 from backend.app.schemas.market_overview import MarketOverviewResponse
+from backend.app.schemas.scanner import ScannerColumnMetricsRequest, ScannerColumnMetricsResponse, ScannerMetadataResponse, ScannerRequest, ScannerResponse
 from backend.app.schemas.stock_chart import StockCandlesResponse
 from backend.app.schemas.stock_indicators import StockIndicatorsRequest, StockIndicatorsResponse
 from backend.app.services.health_service import build_health_payload
-from backend.app.services.market_movers_service import MARKET_MOVERS_LIMIT, get_market_mover_logo, get_market_movers
+from backend.app.services.logo_service import get_local_logo
+from backend.app.services.market_movers_service import MARKET_MOVERS_LIMIT, get_market_movers
 from backend.app.services.market_overview_service import get_market_overview
+from backend.app.services.scanner_service import get_scanner_column_metrics, get_scanner_metadata, get_scanner_results
 from backend.app.services.stock_chart_service import get_stock_candles
 from backend.app.services.stock_indicator_service import get_stock_indicators
 
@@ -32,11 +36,11 @@ def market_movers() -> MarketMoversResponse:
     return get_market_movers(limit=MARKET_MOVERS_LIMIT)
 
 
-@router.get("/market-movers/logos/{ticker}")
-def market_mover_logo(ticker: str) -> Response:
-    """Returns a proxied market mover logo without exposing provider credentials."""
+@router.get("/logos/{symbol}")
+def local_logo(symbol: str) -> Response:
+    """Returns a locally cached company logo."""
     try:
-        content, media_type = get_market_mover_logo(ticker)
+        content, media_type = get_local_logo(symbol)
     except Exception as exc:
         raise HTTPException(status_code=404, detail="Logo unavailable") from exc
     return Response(content=content, media_type=media_type)
@@ -56,6 +60,54 @@ def market_overview() -> MarketOverviewResponse:
         return get_market_overview()
     except (LookupError, RuntimeError, TimeoutError, HTTPError, URLError, json.JSONDecodeError) as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
+@router.post("/scanner", response_model=ScannerResponse)
+async def scanner(request: Request, scanner_request: ScannerRequest) -> ScannerResponse:
+    """Runs the predefined or custom stock scanner."""
+    cancel_event = threading.Event()
+    task = asyncio.create_task(asyncio.to_thread(get_scanner_results, scanner_request, cancel_event.is_set))
+    try:
+        while not task.done():
+            if await request.is_disconnected():
+                cancel_event.set()
+                raise HTTPException(status_code=499, detail="Scanner request cancelled")
+            await asyncio.sleep(0.1)
+        return await task
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        cancel_event.set()
+        if isinstance(exc, HTTPException):
+            raise exc
+        raise HTTPException(status_code=503, detail="Scanner unavailable") from exc
+
+
+@router.get("/scanner/metadata", response_model=ScannerMetadataResponse)
+def scanner_metadata() -> ScannerMetadataResponse:
+    """Returns scanner option metadata."""
+    return get_scanner_metadata()
+
+
+@router.post("/scanner/columns", response_model=ScannerColumnMetricsResponse)
+async def scanner_columns(request: Request, scanner_request: ScannerColumnMetricsRequest) -> ScannerColumnMetricsResponse:
+    """Calculates extra scanner columns for existing result symbols."""
+    cancel_event = threading.Event()
+    task = asyncio.create_task(asyncio.to_thread(get_scanner_column_metrics, scanner_request, cancel_event.is_set))
+    try:
+        while not task.done():
+            if await request.is_disconnected():
+                cancel_event.set()
+                raise HTTPException(status_code=499, detail="Scanner column request cancelled")
+            await asyncio.sleep(0.1)
+        return await task
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        cancel_event.set()
+        if isinstance(exc, HTTPException):
+            raise exc
+        raise HTTPException(status_code=503, detail="Scanner columns unavailable") from exc
 
 
 @router.websocket("/stocks/{ticker}/stream")
