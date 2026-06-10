@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { useNavigate } from "react-router-dom";
 import HeaderBar from "../components/HeaderBar";
 import { logoPresentationStyle } from "../lib/logoPresentation";
@@ -11,21 +12,21 @@ const OPERATORS = [
   { value: "outside", label: "Outside" },
 ];
 const BASE_FILTERS = [
-  { id: "price", label: "Price", min: 0, max: 1_000_000, step: "0.01", compact: "currency", detail: "Live last trade or latest snapshot price." },
-  { id: "market_cap", label: "Market Cap", min: 0, max: 100_000_000_000_000, step: "1000000", compact: "currency", detail: "Latest available closing/reference company market capitalization." },
-  { id: "industry", label: "Industry", type: "category", options: [], detail: "Local company industry classification." },
-  { id: "beta", label: "Beta", min: -20, max: 20, step: "0.01", periods: ["1y", "3y", "5y"], defaultPeriod: "5y", detail: "Daily-return beta versus SPY over the selected long-term window." },
-  { id: "change", label: "Change", min: -10_000, max: 10_000, step: "0.01", compact: "currency", detail: "Current session absolute change from previous close." },
-  { id: "change_pct", label: "Change %", min: -1_000, max: 1_000, step: "0.01", suffix: "%", detail: "Current session percentage change from previous close." },
-  { id: "volume", label: "Volume", min: 0, max: 10_000_000_000, step: "1000", compact: "number", detail: "Current session cumulative volume." },
-  { id: "dollar_volume", label: "Dollar Volume", min: 0, max: 100_000_000_000_000, step: "1000000", compact: "currency", detail: "Current session price multiplied by volume." },
-  { id: "vwap", label: "VWAP", min: 0, max: 1_000_000, step: "0.01", compact: "currency", timeframes: ["1m", "5m", "15m", "30m", "1h", "2h", "4h", "1d", "1w", "1mo"], defaultTimeframe: "1d", detail: "Volume-weighted average price for the selected candle timeframe." },
-  { id: "relative_volume", label: "Relative Volume", min: 0, max: 1_000, step: "0.1", suffix: "x", periods: ["1m", "5m", "15m", "30m", "1h", "2h", "4h", "1d", "1w", "1mo"], defaultPeriod: "1d", detail: "Current volume compared with the selected period's historical average. Intraday periods use latest snapshot minute volume estimates." },
-  { id: "avg_volume", label: "Average Volume", min: 0, max: 10_000_000_000, step: "1000", compact: "number", periods: [10, 30, 60, 90], defaultPeriod: 30, detail: "Average daily volume over the selected trading-day window." },
-  { id: "avg_dollar_volume", label: "Avg Dollar Volume", min: 0, max: 100_000_000_000_000, step: "1000000", compact: "currency", periods: [10, 30, 60, 90], defaultPeriod: 30, detail: "Average daily close multiplied by volume over the selected window." },
-  { id: "rsi", label: "RSI", min: 0, max: 100, step: "0.1", timeframes: ["1m", "5m", "15m", "30m", "1h", "2h", "4h", "1d", "1w", "1mo"], ranges: [7, 14, 21, 30], defaultTimeframe: "1d", defaultRange: 14, detail: "RSI using the selected candle timeframe and range." },
-  { id: "atr", label: "ATR", min: 0, max: 10_000, step: "0.1", compact: "number", timeframes: ["1m", "5m", "15m", "30m", "1h", "2h", "4h", "1d", "1w", "1mo"], ranges: [7, 14, 21, 30], defaultTimeframe: "1d", defaultRange: 14, detail: "ATR using the selected candle timeframe and range." },
-  { id: "atr_pct", label: "ATR %", min: 0, max: 1_000, step: "0.1", suffix: "%", timeframes: ["1m", "5m", "15m", "30m", "1h", "2h", "4h", "1d", "1w", "1mo"], ranges: [7, 14, 21, 30], defaultTimeframe: "1d", defaultRange: 14, detail: "ATR divided by latest price, using the selected candle timeframe and range." },
+  { id: "price", label: "Price", min: 0, max: 1_000_000, step: "0.01", compact: "currency", detail: "The latest available price at which the stock is trading." },
+  { id: "market_cap", label: "Market Cap", min: 0, max: 100_000_000_000_000, step: "1000000", compact: "currency", detail: "The total stock market value of the company, useful for separating small, mid, and large companies." },
+  { id: "industry", label: "Industry", type: "category", options: [], detail: "The business category the company belongs to." },
+  { id: "beta", label: "Beta", min: -20, max: 20, step: "0.01", periods: ["1y", "3y", "5y"], defaultPeriod: "5y", detail: "How much the stock tends to move compared with the market. A beta near 1 moves similarly to the market, above 1 is usually more volatile, and below 1 is usually steadier.\n\ncovariance(stock returns, market returns) / variance(market returns)" },
+  { id: "change", label: "Change", min: -10_000, max: 10_000, step: "0.01", compact: "currency", detail: "The dollar amount the stock has moved during the current session.\n\ncurrent price - previous close" },
+  { id: "change_pct", label: "Change %", min: -1_000, max: 1_000, step: "0.01", suffix: "%", detail: "The current session move shown as a percentage, which makes moves easier to compare across different stock prices.\n\n(current price - previous close) / previous close * 100" },
+  { id: "volume", label: "Volume", min: 0, max: 10_000_000_000, step: "1000", compact: "number", detail: "The number of shares traded so far in the current session. Higher volume usually means more liquidity and more market attention." },
+  { id: "dollar_volume", label: "Dollar Volume", min: 0, max: 100_000_000_000_000, step: "1000000", compact: "currency", detail: "The approximate dollar amount traded so far today. This combines price and volume, so it is often better than share volume for comparing liquidity.\n\ncurrent price * current volume" },
+  { id: "vwap", label: "VWAP", min: 0, max: 1_000_000, step: "0.01", compact: "currency", timeframes: ["1m", "5m", "15m", "30m", "1h", "2h", "4h", "1d", "1w", "1mo"], defaultTimeframe: "1d", detail: "The average price paid during the selected period, with more importance given to prices where more shares traded. Traders often compare price to VWAP to judge whether it is trading above or below the average paid price.\n\nsum(price * volume) / sum(volume)" },
+  { id: "relative_volume", label: "Relative Volume", min: 0, max: 1_000, step: "0.1", suffix: "x", periods: ["1m", "5m", "15m", "30m", "1h", "2h", "4h", "1d", "1w", "1mo"], defaultPeriod: "1d", detail: "How active the stock is compared with its normal trading activity. A value of 2x means it is trading about twice its usual volume for the selected period.\n\ncurrent volume / average volume" },
+  { id: "avg_volume", label: "Average Volume", min: 0, max: 10_000_000_000, step: "1000", compact: "number", periods: [10, 30, 60, 90], defaultPeriod: 30, detail: "The stock's typical number of shares traded per day over the selected window.\n\naverage daily volume over the selected trading days" },
+  { id: "avg_dollar_volume", label: "Avg Dollar Volume", min: 0, max: 100_000_000_000_000, step: "1000000", compact: "currency", periods: [10, 30, 60, 90], defaultPeriod: 30, detail: "The stock's typical dollar amount traded per day. This is useful for comparing liquidity between a high-priced stock and a low-priced stock.\n\naverage(close * volume) over the selected trading days" },
+  { id: "rsi", label: "RSI", min: 0, max: 100, step: "0.1", timeframes: ["1m", "5m", "15m", "30m", "1h", "2h", "4h", "1d", "1w", "1mo"], ranges: [7, 14, 21, 30], defaultTimeframe: "1d", defaultRange: 14, detail: "A momentum score from 0 to 100 that compares recent buying pressure with recent selling pressure. Higher values mean recent gains dominate; lower values mean recent losses dominate.\n\n100 - 100 / (1 + average gain / average loss)" },
+  { id: "atr", label: "ATR", min: 0, max: 10_000, step: "0.1", compact: "number", timeframes: ["1m", "5m", "15m", "30m", "1h", "2h", "4h", "1d", "1w", "1mo"], ranges: [7, 14, 21, 30], defaultTimeframe: "1d", defaultRange: 14, detail: "The stock's average price range over recent candles. It is like an average high-to-low move, but it also accounts for gaps from the previous close.\n\ntrue range = max(high - low, abs(high - previous close), abs(low - previous close)); ATR = Wilder average of true range" },
+  { id: "atr_pct", label: "ATR %", min: 0, max: 1_000, step: "0.1", suffix: "%", timeframes: ["1m", "5m", "15m", "30m", "1h", "2h", "4h", "1d", "1w", "1mo"], ranges: [7, 14, 21, 30], defaultTimeframe: "1d", defaultRange: 14, detail: "The stock's average range compared with its price. This makes volatility easier to compare between stocks with very different prices.\n\nATR / selected timeframe close * 100" },
 ];
 const FILTER_CATEGORY_ORDER = ["fundamental", "technical", "ratios", "market"];
 const FILTER_CATEGORY_LABELS = {
@@ -42,6 +43,15 @@ const FILTER_CATEGORY_BY_ID = {
   rsi: "technical",
   vwap: "technical",
   beta: "ratios",
+};
+const FILTER_FULL_LABELS = {
+  atr: "Average True Range",
+  atr_pct: "Average True Range %",
+  avg_dollar_volume: "Average Dollar Volume",
+  avg_volume: "Average Volume",
+  change_pct: "Change %",
+  rsi: "Relative Strength Index",
+  vwap: "Volume Weighted Average Price",
 };
 const EMPTY_FILTER = { operator: "above", values: ["", ""], selectedValues: [] };
 const COMPACT_SUFFIXES = {
@@ -116,6 +126,7 @@ const PREDEFINED_FILTERS = {
     { label: "Change", summary: "Above $1" },
   ],
 };
+const PREDEFINED_SCANNER_DETAIL = "These are built-in scanner presets for the current market session. The rules are suggestions and may change over time.";
 
 /** Formats large scanner values compactly for buttons and result cells. */
 function formatCompact(value, mode) {
@@ -324,6 +335,22 @@ function columnLabel(column, metricPeriods) {
   return period ? `${column.label} ${PERIOD_LABELS[period] || `${period}D`}` : column.label;
 }
 
+/** Returns the expanded scanner metric name when space allows it. */
+function expandedMetricLabel(key, fallback) {
+  return FILTER_FULL_LABELS[key] || fallback;
+}
+
+/** Returns an expanded column label while preserving selected period details. */
+function expandedColumnLabel(column, metricPeriods) {
+  const baseLabel = expandedMetricLabel(column.key, column.label);
+  const period = column.periodKey ? metricPeriods[column.periodKey] : null;
+  if (period && typeof period === "object") {
+    return `${baseLabel} ${PERIOD_LABELS[period.timeframe] || period.timeframe} ${period.range}`;
+  }
+  return period ? `${baseLabel} ${PERIOD_LABELS[period] || `${period}D`}` : baseLabel;
+}
+
+
 /** Returns the filter config matching a result column when one exists. */
 function columnFilterConfig(columnKey, filterConfigs) {
   return filterConfigs.find((config) => config.id === columnKey);
@@ -477,12 +504,52 @@ function TrashIcon() {
 /** Renders a refresh icon for rerunning scanner requests. */
 function RefreshIcon() {
   return (
-    <svg viewBox="0 0 20 20" aria-hidden="true">
-      <path d="M16 7a6 6 0 0 0-10.2-2.8L4 6" />
-      <path d="M4 3v3h3" />
-      <path d="M4 13a6 6 0 0 0 10.2 2.8L16 14" />
-      <path d="M16 17v-3h-3" />
+    <svg viewBox="0 0 24 24" aria-hidden="true" preserveAspectRatio="xMidYMid meet">
+      <path d="M20 11a8 8 0 0 0-14.2-5L4 8" />
+      <path d="M4 4v4h4" />
+      <path d="M4 13a8 8 0 0 0 14.2 5L20 16" />
+      <path d="M20 20v-4h-4" />
     </svg>
+  );
+}
+
+/** Renders a compact hover help affordance for scanner metrics. */
+function HelpBubble({ text }) {
+  const [tooltip, setTooltip] = useState(null);
+  if (!text) {
+    return null;
+  }
+
+  /** Positions the tooltip below the help bubble without clipping to parent containers. */
+  const showTooltip = (event) => {
+    const rect = event.currentTarget.getBoundingClientRect();
+    const preferredLeft = rect.left + rect.width / 2;
+    const left = Math.min(Math.max(preferredLeft, 150), window.innerWidth - 150);
+    setTooltip({ text, left, top: rect.bottom + 8 });
+  };
+
+  /** Hides the scanner help tooltip. */
+  const hideTooltip = () => setTooltip(null);
+
+  return (
+    <>
+      <span
+        className="scanner-help-bubble"
+        onMouseEnter={showTooltip}
+        onMouseLeave={hideTooltip}
+        onFocus={showTooltip}
+        onBlur={hideTooltip}
+        tabIndex={0}
+      >
+        ?
+      </span>
+      {tooltip && createPortal(
+        <span className="scanner-help-tooltip" style={{ left: tooltip.left, top: tooltip.top }}>
+          {tooltip.text}
+        </span>,
+        document.body,
+      )}
+    </>
   );
 }
 
@@ -550,6 +617,10 @@ function FilterPopover({ config, filter, onChange, onApply, offset }) {
 
   return (
     <div className="scanner-filter-popover" style={{ transform: `translateX(${offset}px)` }}>
+      <div className="scanner-popover-title">
+        <strong>{expandedMetricLabel(config.id, config.label)}</strong>
+        <HelpBubble text={config.detail} />
+      </div>
       {config.type === "category" && (
         <>
           <div className="scanner-checkbox-list">
@@ -564,7 +635,6 @@ function FilterPopover({ config, filter, onChange, onApply, offset }) {
               </label>
             ))}
           </div>
-          <small>{config.detail}</small>
         </>
       )}
       {config.type !== "category" && (
@@ -626,7 +696,6 @@ function FilterPopover({ config, filter, onChange, onApply, offset }) {
       <small className={validationMessage ? "invalid" : ""}>
         {validationMessage || `${formatCompact(config.min, config.compact)} to ${formatCompact(config.max, config.compact)}${config.suffix || ""}`}
       </small>
-      <small>{config.detail}</small>
         </>
       )}
     </div>
@@ -647,6 +716,7 @@ export default function ScannerPage() {
   const [calculatedMetrics, setCalculatedMetrics] = useState([]);
   const [scannerName, setScannerName] = useState("");
   const [loading, setLoading] = useState(false);
+  const [staleResults, setStaleResults] = useState(false);
   const [error, setError] = useState("");
   const [asOf, setAsOf] = useState("");
   const [popoverOffset, setPopoverOffset] = useState(0);
@@ -737,7 +807,41 @@ export default function ScannerPage() {
     if (!canRunScanner) {
       return;
     }
+    markResultsStale();
     setScanVersion((current) => current + 1);
+  };
+
+  /** Marks visible rows as stale while a new scanner request is pending. */
+  const markResultsStale = () => {
+    setStaleResults(results.length > 0);
+    setAsOf("");
+  };
+
+  /** Clears only stale result rows and table-specific scan state. */
+  const clearResultRows = () => {
+    setResults([]);
+    setTotalCount(0);
+    setCalculatedMetrics([]);
+    setForcedColumns(new Set());
+    setStaleResults(false);
+    setAsOf("");
+  };
+
+  /** Clears rows and counts that no longer match the current scanner inputs. */
+  const clearStaleResults = () => {
+    requestSeqRef.current += 1;
+    requestRef.current?.abort();
+    markResultsStale();
+    setScannerName("");
+    setError("");
+  };
+
+  /** Switches scanner mode and clears rows from the previous search. */
+  const changeMode = (nextMode) => {
+    if (mode !== nextMode) {
+      clearStaleResults();
+    }
+    setMode(nextMode);
   };
 
   /** Toggles result table sorting for one column. */
@@ -977,6 +1081,7 @@ export default function ScannerPage() {
 
   /** Removes an applied filter and any draft value for it. */
   const clearFilter = (id) => {
+    clearStaleResults();
     setFilters((current) => {
       const next = { ...current };
       delete next[id];
@@ -1012,6 +1117,7 @@ export default function ScannerPage() {
     }
 
     setFilters((current) => ({ ...current, [id]: draft }));
+    clearStaleResults();
     setOpenFilter("");
   };
 
@@ -1148,14 +1254,10 @@ export default function ScannerPage() {
     if (mode === "custom" && activeFilters.length === 0) {
       requestSeqRef.current += 1;
       requestRef.current?.abort();
-      setResults([]);
-      setTotalCount(0);
-      setCalculatedMetrics([]);
-      setForcedColumns(new Set());
+      clearResultRows();
       setScannerName("");
       setLoading(false);
       setError("");
-      setAsOf("");
       return undefined;
     }
 
@@ -1169,6 +1271,7 @@ export default function ScannerPage() {
       requestRef.current = controller;
       setLoading(true);
       setError("");
+      markResultsStale();
 
       try {
         const response = await fetch("/api/scanner", {
@@ -1188,6 +1291,7 @@ export default function ScannerPage() {
         setResults(payload.results || []);
         setTotalCount(payload.total_count ?? payload.results?.length ?? 0);
         setCalculatedMetrics(payload.calculated_metrics || []);
+        setStaleResults(false);
         setColumnOrder((current) => appendCalculatedColumns(current, payload.calculated_metrics || []));
         setForcedColumns(new Set());
         setScannerName(payload.scanner_name || "");
@@ -1196,6 +1300,7 @@ export default function ScannerPage() {
       } catch (err) {
         if (!(err instanceof DOMException && err.name === "AbortError") && requestSeqRef.current === requestSeq) {
           setError(err instanceof Error ? err.message : "Scanner unavailable");
+          setStaleResults(false);
         }
       } finally {
         if (requestRef.current === controller && requestSeqRef.current === requestSeq) {
@@ -1219,10 +1324,10 @@ export default function ScannerPage() {
       <HeaderBar onSearch={openTicker} />
 
       <section className="scanner-toolbar">
-        <button className={`scanner-mode-button ${mode === "predefined" ? "active" : ""}`} type="button" onClick={() => setMode("predefined")}>
+        <button className={`scanner-mode-button ${mode === "predefined" ? "active" : ""}`} type="button" onClick={() => changeMode("predefined")}>
           Pre-defined Scanner
         </button>
-        <button className={`scanner-mode-button ${mode === "custom" ? "active" : ""}`} type="button" onClick={() => setMode("custom")}>
+        <button className={`scanner-mode-button ${mode === "custom" ? "active" : ""}`} type="button" onClick={() => changeMode("custom")}>
           Custom Scanner
         </button>
         <div className="menu-popover scanner-source-popover-wrap">
@@ -1307,7 +1412,10 @@ export default function ScannerPage() {
 
       {mode === "predefined" && scannerName && (
         <section className="scanner-filter-panel predefined-scanner-panel">
-          <div className="scanner-session-label">{scannerName === "premarket" ? "Pre-market scanner" : "Intraday scanner"}</div>
+          <div className="scanner-session-label">
+            <span>{scannerName === "premarket" ? "Pre-market scanner" : "Intraday scanner"}</span>
+            <HelpBubble text={PREDEFINED_SCANNER_DETAIL} />
+          </div>
           {(PREDEFINED_FILTERS[scannerName] || []).map((item) => (
             <div className="scanner-filter-wrap" key={item.label}>
               <div className="scanner-filter-control selected immutable">
@@ -1330,14 +1438,27 @@ export default function ScannerPage() {
             <h2>Results</h2>
             <span>{totalCount.toLocaleString()} found</span>
           </div>
-          <span>{loading ? "Scanning..." : asOfLabel ? `As of ${asOfLabel}` : "No scan running"}</span>
+          <span className={`scanner-status ${loading ? "loading" : ""}`}>
+            {loading ? "Scanning..." : asOfLabel ? `As of ${asOfLabel}` : "No scan running"}
+          </span>
         </div>
         {error && <p className="scanner-error">{error}</p>}
+        {!error && loading && results.length === 0 && !staleResults && (
+          <div className="scanner-skeleton" aria-hidden="true">
+            {Array.from({ length: 8 }).map((_, rowIndex) => (
+              <div className="scanner-skeleton-row" key={rowIndex}>
+                {Array.from({ length: 7 }).map((__, cellIndex) => (
+                  <span className={cellIndex === 0 ? "wide" : ""} key={cellIndex} />
+                ))}
+              </div>
+            ))}
+          </div>
+        )}
         {!error && mode === "custom" && activeFilters.length === 0 && <p className="scanner-empty">Select at least one filter.</p>}
         {!error && mode && activeFilters.length > 0 && !loading && results.length === 0 && <p className="scanner-empty">No matches.</p>}
         {!error && mode === "predefined" && !loading && results.length === 0 && asOf && <p className="scanner-empty">No matches.</p>}
         {results.length > 0 && (
-          <div className="scanner-table-wrap" onScroll={handleTableScroll}>
+          <div className={`scanner-table-wrap ${staleResults ? "stale" : ""}`} onScroll={handleTableScroll}>
             <table className="scanner-table">
               <thead>
                 <tr>
@@ -1420,10 +1541,13 @@ export default function ScannerPage() {
                             const draft = columnAddDrafts[selectedAddColumn] || defaultColumnMetricDraft(config, metricPeriods);
                             return (
                               <div className="scanner-add-column-config">
-                                <button className="scanner-add-column-back" type="button" onClick={() => setSelectedAddColumn("")}>
-                                  <span>&lt;</span>
-                                  <strong>{column?.label}</strong>
-                                </button>
+                                <div className="scanner-add-column-heading">
+                                  <button className="scanner-add-column-back" type="button" onClick={() => setSelectedAddColumn("")} aria-label="Back to columns">
+                                    &lt;
+                                  </button>
+                                  <strong>{expandedMetricLabel(selectedAddColumn, column?.label)}</strong>
+                                  <HelpBubble text={config?.detail} />
+                                </div>
                                 <div className="scanner-add-column-fields">
                                   {config?.periods && (
                                     <label className="scanner-period-field">
@@ -1514,8 +1638,10 @@ export default function ScannerPage() {
           onMouseDown={(event) => event.stopPropagation()}
         >
           <div className="scanner-column-context-title">
-            <strong>{columnLabel(columnContextMenu.column, metricPeriods)}</strong>
-            <span>?</span>
+            <div className="scanner-column-context-name">
+              <strong>{expandedColumnLabel(columnContextMenu.column, metricPeriods)}</strong>
+              <HelpBubble text={columnFilterConfig(columnContextMenu.column.key, filterConfigs)?.detail} />
+            </div>
             {columnContextMenu.column.key !== "symbol" && (
               <button type="button" aria-label="Hide column" onClick={() => runColumnCommand("hide")}><TrashIcon /></button>
             )}
