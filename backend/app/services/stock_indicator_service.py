@@ -20,7 +20,7 @@ from backend.app.utils.stock_indicator_utils import (
 
 try:
     import pandas_ta as ta
-except ImportError:  # pragma: no cover
+except Exception:  # pragma: no cover
     ta = None
 
 
@@ -28,14 +28,17 @@ ALLOWED_INDICATOR_TYPES = {"SMA", "EMA", "WMA", "VWAP", "RSI", "MACD", "BBANDS"}
 
 
 def _sma(values: pd.Series, period: int) -> pd.Series:
+    """Calculate a simple moving average over closing values."""
     return values.rolling(window=period, min_periods=period).mean()
 
 
 def _ema(values: pd.Series, period: int) -> pd.Series:
+    """Calculate an exponential moving average over closing values."""
     return values.ewm(span=period, adjust=False, min_periods=period).mean()
 
 
 def _wma(values: pd.Series, period: int) -> pd.Series:
+    """Calculate a weighted moving average over closing values."""
     weights = pd.Series(range(1, period + 1), dtype="float64")
     divisor = float(weights.sum())
     return values.rolling(window=period, min_periods=period).apply(
@@ -45,12 +48,14 @@ def _wma(values: pd.Series, period: int) -> pd.Series:
 
 
 def _vwap(high: pd.Series, low: pd.Series, close: pd.Series, volume: pd.Series) -> pd.Series:
+    """Calculate volume-weighted average price from OHLCV series."""
     typical_price = (high + low + close) / 3
     cumulative_volume = volume.cumsum()
     return (typical_price * volume).cumsum() / cumulative_volume.replace(0, pd.NA)
 
 
 def _rsi(close: pd.Series, period: int) -> pd.Series:
+    """Calculate relative strength index from closing prices."""
     delta = close.diff()
     gain = delta.clip(lower=0)
     loss = -delta.clip(upper=0)
@@ -61,6 +66,7 @@ def _rsi(close: pd.Series, period: int) -> pd.Series:
 
 
 def _macd(close: pd.Series, fast: int, slow: int, signal: int) -> tuple[pd.Series, pd.Series, pd.Series]:
+    """Calculate MACD, signal, and histogram series."""
     macd_line = _ema(close, fast) - _ema(close, slow)
     signal_line = _ema(macd_line, signal)
     histogram = macd_line - signal_line
@@ -68,6 +74,7 @@ def _macd(close: pd.Series, fast: int, slow: int, signal: int) -> tuple[pd.Serie
 
 
 def _bbands(close: pd.Series, period: int, std_dev: float) -> tuple[pd.Series, pd.Series, pd.Series]:
+    """Calculate Bollinger Band upper, middle, and lower series."""
     middle = _sma(close, period)
     deviation = close.rolling(window=period, min_periods=period).std()
     upper = middle + deviation * std_dev
@@ -76,6 +83,7 @@ def _bbands(close: pd.Series, period: int, std_dev: float) -> tuple[pd.Series, p
 
 
 def _frame_from_request_candles(request: StockIndicatorsRequest) -> pd.DataFrame | None:
+    """Build an indicator input frame from request-supplied candles."""
     if not request.candles:
         return None
 
@@ -98,6 +106,7 @@ def _frame_from_request_candles(request: StockIndicatorsRequest) -> pd.DataFrame
 
 
 def get_stock_indicators(ticker: str, request: StockIndicatorsRequest) -> StockIndicatorsResponse:
+    """Calculate requested technical indicators for a ticker."""
     load_limit = request.limit + request.warmup_bars
 
     frame = _frame_from_request_candles(request)

@@ -94,6 +94,29 @@ function hasIndicator(indicators, type) {
   return indicators.some((indicator) => indicator.type === type);
 }
 
+/** Builds the computed-data identity for matching equivalent indicator configs. */
+function indicatorConfigKey(indicator) {
+  const effectiveTimeframe = indicator.timeframeMode === "fixed" && indicator.indicatorTimeframe !== "chart"
+    ? indicator.indicatorTimeframe
+    : "chart";
+  const parts = [indicator.type, effectiveTimeframe];
+
+  if (indicatorNeedsPeriod(indicator.type)) {
+    parts.push(indicator.period ?? "");
+  }
+  if (indicator.type === "RSI") {
+    parts.push(indicator.maPeriod ?? "");
+  }
+  if (indicator.type === "MACD") {
+    parts.push(indicator.slowPeriod ?? "", indicator.signalPeriod ?? "");
+  }
+  if (indicator.type === "BBANDS") {
+    parts.push(indicator.stdDev ?? "");
+  }
+
+  return parts.join("|");
+}
+
 function normalizeCrosshairTime(rawTime) {
   if (rawTime === null || rawTime === undefined) {
     return null;
@@ -2489,24 +2512,30 @@ export default function StockPage() {
     resolvedIndicators,
   ]);
 
+  /** Opens the indicator catalog modal. */
   const openIndicatorPicker = () => {
     setIndicatorPickerOpen(true);
     setIndicatorSettingsOpen(false);
   };
 
+  /** Opens settings for a new indicator while preserving singleton volume behavior. */
   const openNewIndicatorSettings = (type) => {
-    const existing = indicators.find((indicator) => indicator.type === type);
-    setIndicatorDraft(createIndicatorDraft(type, indicators.length, existing || null));
+    const source = type === "VOLUME"
+      ? indicators.find((indicator) => indicator.type === type) || null
+      : null;
+    setIndicatorDraft(createIndicatorDraft(type, indicators.length, source));
     setIndicatorPickerOpen(false);
     setIndicatorSettingsOpen(true);
   };
 
+  /** Opens settings for an existing indicator instance. */
   const openEditIndicatorSettings = (indicator) => {
     setIndicatorDraft(createIndicatorDraft(indicator.type, indicators.length, indicator));
     setIndicatorPickerOpen(false);
     setIndicatorSettingsOpen(true);
   };
 
+  /** Saves the active indicator draft as a new or existing indicator config. */
   const saveIndicatorSettings = () => {
     const period = indicatorNeedsPeriod(indicatorDraft.type) ? clampPeriod(indicatorDraft.period) : null;
     const lineWidth = Math.max(1, Math.min(Number.parseInt(indicatorDraft.lineWidth, 10) || 1, 4));
@@ -2515,10 +2544,6 @@ export default function StockPage() {
       return;
     }
 
-    const existingSameType = !indicatorDraft.id && indicatorDraft.type === "VOLUME"
-      ? indicators.find((indicator) => indicator.type === indicatorDraft.type)
-      : null;
-    const targetId = indicatorDraft.id || existingSameType?.id;
     const timeframeMode = indicatorDraft.indicatorTimeframe === "chart" ? "chart" : "fixed";
     const settings = {
       period,
@@ -2540,6 +2565,16 @@ export default function StockPage() {
       timeframeMode,
       indicatorTimeframe: indicatorDraft.indicatorTimeframe,
     };
+    const matchingConfig = !indicatorDraft.id
+      ? indicators.find((indicator) => indicatorConfigKey(indicator) === indicatorConfigKey({
+          type: indicatorDraft.type,
+          ...settings,
+        }))
+      : null;
+    const existingSameType = !indicatorDraft.id && indicatorDraft.type === "VOLUME"
+      ? indicators.find((indicator) => indicator.type === indicatorDraft.type)
+      : null;
+    const targetId = indicatorDraft.id || matchingConfig?.id || existingSameType?.id;
 
     if (targetId) {
       setIndicators((current) =>

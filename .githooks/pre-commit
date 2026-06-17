@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+cd "$(git rev-parse --show-toplevel)"
+
+PYTHON_BIN="${PYTHON_BIN:-python3.12}"
+
+if ! command -v "$PYTHON_BIN" >/dev/null 2>&1; then
+    echo "pre-commit: $PYTHON_BIN is required to run tests." >&2
+    exit 1
+fi
+
+echo "pre-commit: running tests with $PYTHON_BIN -m pytest"
+"$PYTHON_BIN" -m pytest
